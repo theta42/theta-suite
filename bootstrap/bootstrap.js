@@ -642,12 +642,13 @@ async function seedDirectory(token, clientId, jumpClientId) {
 		requestable: false,
 	});
 
-	// Remove legacy OpenBao/bao-renewer seed resources if present — OpenBao is an
+	// Remove or set ignored on OpenBao/bao-renewer seed resources if present — OpenBao is an
 	// internal stack service, not a user-facing published directory service.
-	const openbaoRes = resources.find((r) => r.slug === 'openbao');
-	const renewerRes = resources.find((r) => r.slug === 'bao-renewer');
-	if (openbaoRes) await dirDelete(token, `resources/${openbaoRes.id}`);
-	if (renewerRes) await dirDelete(token, `resources/${renewerRes.id}`);
+	for (const r of resources) {
+		if (r.slug === 'openbao' || r.slug === 'bao-renewer' || (r.name && r.name.includes('openbao')) || (r.name && r.name.includes('bao-renewer'))) {
+			await dirDelete(token, `resources/${r.id}`).catch(() => {});
+		}
+	}
 
 	// SSH jump host service (core component — always registered).
 	let jumpSvc = null;
