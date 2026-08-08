@@ -8,6 +8,17 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [sso-manager-node](https://github.com/theta42/sso-manager-node/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v1.48.0] - 2026-08-08
+
+Rolls up **sso-manager-node v1.33.0**, **theta-agent v1.8.0**, **proxy v1.35.1**, **jump-host v1.19.1**.
+
+### Added
+- **Directory Key Badges & Secret Search/Filter.** Added key badges `🔑 Secret` to resources with stored OpenBao secrets, secret key search filtering, and a `With Secrets` tree toggle.
+- **Discovered Inventory Merge & Ignore Actions.** Supported merging discovered network devices into existing Directory resources and ignoring unmanaged entries.
+- **Kind-Specific Resource Creation Modals.** Added dedicated `+ Add Site`, Host, and Service creation workflows.
+- **Optional Child Secret Key Name on Inheritance.** Made key name optional when inheriting parent secrets — defaulting to the original parent secret key name if left blank.
+- **Agent Tab Versioning, Logged Users & Desktop Operations.** Added Agent Version badge (`v1.8.0`), physical partitions table, active logged-in sessions list (`who` / `host.Users()`), and desktop session/power controls (Lock, Display Off, Log Out, Sleep Host).
+
 ## [v1.47.0] - 2026-08-08
 
 Rolls up **sso-manager-node v1.32.0**, **theta-agent v1.7.0**, **proxy v1.35.1**, **jump-host v1.19.1**.
