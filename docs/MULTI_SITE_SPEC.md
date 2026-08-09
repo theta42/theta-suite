@@ -1,7 +1,7 @@
-# Theta Suite Multi-Site Architecture & Replication Specification
+# Theta Suite Multi-Site Architecture & VPN Specification
 
-**Specification Version**: `1.0.0`  
-**Status**: Draft Architecture Proposal  
+**Specification Version**: `2.0.0`  
+**Status**: Final Architecture Specification  
 **Target Suite Version**: `v1.50.0+`  
 **Repository**: [`theta-suite`](https://github.com/theta42/theta-suite)
 
@@ -9,173 +9,221 @@
 
 ## Executive Summary
 
-This specification defines the multi-site replication, fault tolerance, and site isolation architecture for the `theta-suite` ecosystem (`sso-manager-node`, `openbao`, `openldap`, `theta-proxy`, `jump-host`, and `theta-agent`).
+This specification defines the multi-site replication, fault tolerance, autonomous site isolation, and integrated WireGuard mesh network architecture for the `theta-suite` ecosystem.
 
-The architecture follows a **Symmetric Deployment with Explicit Master Control and Autonomous Site Nodes**. Every site runs an identical software stack. At any given time, one site is designated as the **Master (Control Plane)**, while all other sites operate as **Autonomous Spoke Nodes**.
-
-If a WAN partition or outage disconnects a Spoke site from the Master, **no automatic failover is attempted** (preventing split-brain data corruption). Instead, the Spoke node remains in **Spoke Mode**—allowing local user OAuth logins, local SSH jumps, local web application proxying, local secret lookups, and local agent telemetry/controls to continue operating **100% autonomously without WAN dependency**.
+The architecture enforces **Deployment Symmetry**, **Explicit Master Control via `god_admin` Authority**, **`theta-gateway` Mesh & SSH Integration**, and **Zero-WAN Dependency for Local Operations**.
 
 ---
 
-## 1. High-Level Architecture Diagram
+## 1. High-Level System Architecture
 
 ```mermaid
 flowchart TB
-    subgraph MasterSite["Master Site (HQ / Control Plane)"]
+    subgraph ControlPlane["Master Site (Site 10.1 - HQ / Control Plane)"]
         ssoM["sso-manager-node (Master Read/Write)"]
         ldapM["OpenLDAP (MMR Master Node 1)"]
-        baoM["OpenBao (Master Secrets)"]
+        baoM["OpenBao (Master Secrets Engine)"]
         proxyM["theta-proxy (HQ Web Gateway)"]
-        jumpM["jump-host (HQ SSH Gateway)"]
+        gateM["theta-gateway (HQ SSH & WireGuard Mesh Gate)"]
         agentM["theta-agent (HQ Local Agents)"]
     end
 
-    subgraph SpokeSiteB["Spoke Site B (Chicago)"]
+    subgraph SiteB["Spoke Site 10.2 (Staten Island LAN)"]
         ssoB["sso-manager-node (Spoke Read-Only Catalog)"]
         ldapB["OpenLDAP (MMR Node 2 / Read-Only Replica)"]
         baoB["OpenBao (Spoke Local Secret Replica)"]
-        proxyB["theta-proxy (Site B Local Web Gateway)"]
-        jumpB["jump-host (Site B SSH Gateway - Filtered)"]
-        agentB["theta-agent (Site B Local Agents)"]
+        proxyB["theta-proxy (Site 10.2 Local Web Gateway)"]
+        gateB["theta-gateway (Site 10.2 SSH & WG Mesh Gate)"]
+        agentB["theta-agent (Site 10.2 Local Agents)"]
     end
 
-    subgraph SpokeSiteC["Spoke Site C (Austin)"]
-        ssoC["sso-manager-node (Spoke Read-Only Catalog)"]
-        ldapC["OpenLDAP (MMR Node 3 / Read-Only Replica)"]
-        baoC["OpenBao (Spoke Local Secret Replica)"]
-        proxyC["theta-proxy (Site C Local Web Gateway)"]
-        jumpC["jump-host (Site C SSH Gateway - Filtered)"]
-        agentC["theta-agent (Site C Local Agents)"]
+    subgraph SiteNL["Spoke Site 10.5 (Netherlands Offshore Exit)"]
+        ssoNL["sso-manager-node (Spoke Read-Only Catalog)"]
+        ldapNL["OpenLDAP (MMR Node 5 / Read-Only Replica)"]
+        baoNL["OpenBao (Spoke Local Secret Replica)"]
+        proxyNL["theta-proxy (Site 10.5 Local Web Gateway)"]
+        gateNL["theta-gateway (Site 10.5 Offshore Exit Gate)"]
+        agentNL["theta-agent (Site 10.5 Local Agents)"]
     end
 
-    ssoM <==>|"1. SSE/HTTP Catalog Sync"| ssoB
-    ssoM <==>|"1. SSE/HTTP Catalog Sync"| ssoC
-    ldapM <==>|"2. OpenLDAP MMR syncrepl"| ldapB
-    ldapM <==>|"2. OpenLDAP MMR syncrepl"| ldapC
-    baoM -.->|"3. Secret Version Replicator"| baoB
-    baoM -.->|"3. Secret Version Replicator"| baoC
+    gateM <==>|"WireGuard Encrypted Mesh Tunnel (172.24.0.x)"| gateB
+    gateM <==>|"WireGuard Encrypted Mesh Tunnel (172.24.0.x)"| gateNL
+    gateB <==>|"WireGuard Direct Tunnel"| gateNL
+
+    ssoM <==>|"HTTP SSE Catalog Change Events"| ssoB
+    ldapM <==>|"OpenLDAP MMR syncrepl (ldaps://636)"| ldapB
+    baoM -.->|"Secret Version Replicator"| baoB
 ```
 
 ---
 
-## 2. Core Architectural Guarantees
+## 2. Component Core Roles
 
-| Design Aspect | Architectural Choice | System Rationale |
-| :--- | :--- | :--- |
-| **Deployment Symmetry** | Identical Stack everywhere | Every site runs the same Docker Compose stack & code base. |
-| **Catalog Authority** | Explicit Master Designation | Single write target for `inventory.sqlite` catalog mutations. |
-| **Failover Control** | **Human `god_admin` Action Only** | Zero automatic failover; eliminates split-brain risks over WAN. |
-| **Isolated Autonomy** | 100% Operational Locally | OAuth logins, secrets reads, SSH jumps, and agents work offline. |
-| **Write Usability** | Transparent API Proxying | Operators can issue catalog writes from any connected SSO UI. |
-| **Audit Trails** | Non-Canonical Async Log Shipping | Local site logs don't block operations; flushes to Master when online. |
+### 2.1 `theta-gateway` (Merged SSH Jump & WireGuard Mesh Gateway)
+The container previously named `jump-host` is officially rebranded and expanded to **`theta-gateway`**. It acts as the single security & routing gateway for each site:
+1. **SSH Jump Host (Port 2222)**: Handles interactive terminal jumps, user identity verification via local OpenLDAP, and dynamic SSH key injection.
+2. **Site-Aware SSH Target Filtering**: `theta-gateway` filters target host/service selection menus strictly to resources assigned to that local site (`SITE_SLUG`).
+3. **WireGuard Mesh Router (Port 51820 / 51871)**: Handles tunnel termination (`wg0`), peer key management, keepalives, and inter-site routing.
+4. **NETMAP & Policy Routing Engine**: Applies `iptables` NETMAP shadow subnet translations, dynamic return path masquerading, and policy exit routes (`table offshore`, `table us_vps`).
+
+### 2.2 `sso-manager-node` (Control Plane & Local Issuer)
+* **Master Role (`isMaster = true`)**: Holds single write authority for directory resources in `inventory.sqlite`. Processes write requests proxied from Spokes.
+* **Spoke Role (`isMaster = false`)**: Runs in Read-Only Catalog mode. Performs local OIDC JWT token issuance for local web apps via local OpenLDAP authentication.
+
+### 2.3 `theta-proxy` (Site-Local Web Gateway)
+* **Local Route Scope**: Manages local web application reverse proxying and TLS certificates (ACME / Let's Encrypt / local certs) 100% locally.
+* **Zero Locking**: Proxy route definitions and TLS certs are not locked during Master WAN outages.
+
+### 2.4 `theta-agent` (Site-Local Agent Hub)
+* **Local WS Connection**: Connects to the local site's `sso-manager-node` WebSocket (`wss://sso.site-b.example.com/api/agent/ws`).
+* **Local Autonomy**: Real-time telemetry, memory/CPU metrics, disk usage, active logged-in users (`who`), and desktop control commands (lock, display off, logout, reboot) operate 100% locally.
 
 ---
 
-## 3. Subsystem Implementation & Data Flow
+## 3. Explicit Master Control & Human `god_admin` Authority
 
-### 3.1 Directory Catalog (`inventory.sqlite`)
-* **Master Site**: Holds primary write authority over directory resources (sites, hosts, services, edges, access groups).
-* **Spoke Sites**: Maintain a read-only SQLite catalog replica (`inventory.sqlite`).
-* **Realtime Replication**: When a resource is modified on Master, Master broadcasts an SSE / WebSocket event (`POST /api/directory-admin/sync/catalog-event`). Spoke nodes apply the update locally in real time.
-* **Transparent Write Proxying**: When an operator accesses `https://sso.site-b.example.com` and performs an edit:
-  - If Site B is **connected to Master**: Site B proxies `POST /api/directory-admin/*` to Master. Master applies the edit and broadcasts the change.
-  - If Site B is **isolated from Master**: The UI displays a warning banner:
-    > *"Master site offline. Directory catalog edits are temporarily paused until WAN connection to Master is restored."*
+To guarantee **0% split-brain risk**, automatic failover across WAN is explicitly disabled:
 
-### 3.2 User Identity & Credentials (`OpenLDAP`)
-* **Replication**: OpenLDAP `slapd` daemons across all sites run in **N-Way Multi-Master Replication (MMR)** or Provider/Consumer `syncrepl` mode over LDAPS (`ldaps://sso-master:636`).
-* **Sub-Millisecond Auth**: Linux PAM/SSSD, sudo rules, and user SSH public keys hit `ldaps://localhost:636` at each site.
-* **WAN Outage Impact**: **Zero.** Local servers authenticate users against local OpenLDAP replicas with zero latency.
+```
+                          WAN OUTAGE DETECTED
+                                   │
+                                   ▼
+             Spoke Node Unconditionally Retains SPOKE Mode
+             (Read-Only Catalog / Full Local Operations)
+                                   │
+                                   ▼
+             Requires Human god_admin Promotion Action
+             (Explicit Confirmation Modal in SSO UI / CLI)
+```
 
-### 3.3 OAuth 2.0 / OIDC Authentication
-* **Local Issuer Endpoint**: Every site runs a local OIDC issuer (`https://sso.site-b.example.com`).
-* **Isolated Login Flow**:
-  1. User accesses `https://app.site-b.example.com`.
-  2. Spoke Proxy redirects to `https://sso.site-b.example.com/oauth/authorize`.
-  3. Spoke SSO authenticates the user against the local OpenLDAP replica.
-  4. Spoke SSO issues an OIDC JWT signed by the replicated site private key.
-  5. Spoke Proxy verifies the JWT against Spoke SSO JWKS (`/.well-known/jwks.json`) and grants access.
-* **WAN Outage Impact**: **Zero.** Full login and access token issuance continue working during WAN isolation.
+1. **Unreachable Master Behavior**: If a Spoke node loses WAN connection to the Master, it **unconditionally remains in Spoke Mode**.
+2. **Human Re-assignment**: Changing or promoting a Master node requires an explicit action by an authenticated **`god_admin`** user via the SSO UI or `theta-suite-admin promote-master` CLI.
 
-### 3.4 Reverse Proxy (`theta-proxy`)
-* **Site-Local Scope**: Each site's `theta-proxy` manages its own domain routes, upstream backends, and TLS certificates (`secret/proxy/conf` in local OpenBao, ACME / Let's Encrypt certificates).
-* **No Replication Required**: Proxy routes and TLS certs are independent per site. They are not stored in global SSO catalog tables and are **never locked during master outages**.
+---
 
-### 3.5 SSH Jump Host (`jump-host`)
-* **Site-Filtered Target Menus**: Each `jump-host` container is passed its local site identity (`SITE_SLUG=site-b-chicago`).
-* **Target Filter Query**:
-  ```sql
-  SELECT * FROM resources 
-  WHERE (kind = 'host' OR kind = 'service') 
-    AND (site_slug = 'site-b-chicago' OR parent_site_id = 'site-b-id');
+## 4. Integrated WireGuard Mesh & Key Provisioning Protocol
+
+### 4.1 Automatic Key Exchange & Peer Discovery
+1. When a new `theta-gateway` boots or joins a site via Join Key:
+   - It generates a Curve25519 keypair and registers its public key, listen port, and public endpoint with `sso-manager-node` (`POST /api/mesh/gateway/register`).
+2. `sso-manager-node` calculates the site index (`Site 10.x`), assigns mesh IPs (`172.24.0.x`), and broadcasts updated peer definitions to all active `theta-gateway` instances.
+3. Each `theta-gateway` updates its running WireGuard interface (`wg0`) dynamically via `wgctrl` / `iptables` without dropping existing connections.
+
+### 4.2 NETMAP Shadow Subnet Addressing (`10.<site_id>.168.0/24`)
+To prevent IP collisions when multiple sites use default `192.168.1.0/24` physical LANs, `theta-gateway` automatically enables **NETMAP Shadow Subnets by default**:
+
+```bash
+# NETMAP: Shadow network (10.<site_id>.168.x) to physical LAN (192.168.1.x)
+PostUp = iptables -t nat -A PREROUTING -i wg0 -d 10.<site_id>.168.0/24 -j NETMAP --to 192.168.1.0/24
+PostUp = iptables -t nat -A POSTROUTING -o wg0 -s 192.168.1.0/24 -j NETMAP --to 10.<site_id>.168.0/24
+PostUp = ip route add local 10.<site_id>.168.0/24 dev lo
+```
+
+* **Effect**: A server at Site 10.2 (`192.168.1.50`) can reach a server at Site 10.4 (`192.168.1.50`) by pinging `10.4.168.50`. Neither site needs to modify router DHCP or local subnets!
+
+### 4.3 Policy Exit Routing & Return Path SOURCENAT
+* **Custom Route Tables**: `theta-gateway` supports selective outbound exit tables (`table offshore`, `table us_vps`) based on IP ranges (`ip rule add from 10.x.254.0/24 lookup offshore`).
+* **Dynamic Return Path SOURCENAT**: Exit nodes (e.g. Netherlands `10.5`) apply source-NAT masquerading for incoming tunnel traffic to guarantee symmetric return path routing:
+  ```bash
+  PostUp = iptables -t nat -A POSTROUTING -o wg0 ! -s 172.24.0.0/13 -j MASQUERADE
   ```
-* **Isolation Resilience**: When a user SSHs to `jump.site-b.example.com:2222`, Jump Host reads the local catalog copy and local OpenLDAP replica. Users reach Site B target servers with zero WAN dependency.
-
-### 3.6 Theta Agent WebSocket Hubs (`theta-agent`)
-* **Site-Local WS Hub**: Machines at Site B connect their `theta-agent` daemon to **Site B's local SSO node** (`wss://sso.site-b.example.com/api/agent/ws`).
-* **Local Telemetry & Desktop Controls**: Real-time memory, CPU, disk partitions, logged-in users, and desktop controls (lock session, display off, logout, reboot) operate 100% locally at Site B.
-* **HQ Aggregation**: When WAN is connected, Spoke SSO nodes stream telemetry summaries to Master SSO for global dashboard viewing.
-
-### 3.7 Non-Canonical Audit & Activity Logging
-* **Local Site Storage**: OAuth logins, SSH session events, proxy access logs, and agent execution events are written to local site log buffers (`inventory.sqlite` audit table or local log files).
-* **Asynchronous Shipping**: A background log worker flushes log batches to Master via `POST /api/directory-admin/audit/ingest` when WAN is connected.
-* **Zero Catalog Side Effects**: Audit log events never mutate resource definitions or block catalog transactions.
 
 ---
 
-## 4. Human `god_admin` Master Re-assignment Flow
+## 5. Roaming Admin Access (QR Codes & Optional Tailscale)
 
-Automatic failover across WAN is explicitly disabled to prevent split-brain. Master promotion requires a human **`god_admin`** user:
+1. **Native WireGuard Client Profiles**:
+   - `sso-manager-node` includes a built-in **Client Profile Generator** in the UI.
+   - Admins can generate a mobile/laptop profile, displaying a **QR code** for immediate scan into the official WireGuard app on iOS/Android or a downloadable `wg0.conf` for laptops.
+2. **Optional Tailscale / Headscale Connector**:
+   - For roaming devices in environments where WireGuard UDP ports are blocked, `theta-gateway` supports an optional `tailscale` / `headscale` sidecar integration.
 
-```mermaid
-sequenceDiagram
-    autonumber
-    actor Admin as god_admin Operator
-    participant Spoke as Site B SSO Node
-    participant Master as Site A Master Node (Offline)
+---
 
-    Note over Spoke: Master site A goes offline (WAN outage)
-    Spoke->>Spoke: Retain SPOKE Mode (Catalog Read-Only)
-    Note over Spoke: Local OAuth, Secrets & Agents stay 100% Active
+## 6. Non-Canonical Audit Logging
 
-    Admin->>Spoke: Access UI / CLI & trigger "Promote to Master"
-    Spoke-->>Admin: Prompt Confirmation & Split-Brain Warning
-    Admin->>Spoke: Confirm Promotion
-    Spoke->>Spoke: Set ROLE = MASTER, isMaster = true
-    Spoke->>Spoke: Enable Catalog Write Engine & OpenBao Master Sync
-    Spoke-->>Admin: Site B is now active Master
+* **Local Activity Storage**: OAuth logins, SSH session events, proxy access logs, and agent execution events write to local site audit tables without blocking local operations.
+* **Asynchronous Log Worker**: A background worker flushes log batches to Master via `POST /api/directory-admin/audit/ingest` when WAN is online.
+
+---
+
+## Appendix A: Production Reference WireGuard Topology Config
+
+### Site 10.2 (Staten Island LAN Node) Gateway Reference (`wg0.conf`)
+```ini
+[Interface]
+Address = 172.24.0.2/32
+PrivateKey = <SITE_10_2_PRIVATE_KEY>
+ListenPort = 51820
+Table = off
+
+# Mesh Subnet Routes
+PostUp = ip route add 10.0.0.0/8 dev %i
+PostUp = ip route add 172.24.0.0/13 dev %i
+
+# Policy Routing Exits
+PostUp = ip route add default via 10.5.0.1 dev %i table offshore
+PostUp = ip route add default via 172.24.0.1 dev %i table us_vps
+PostUp = ip rule add from 10.2.254.0/24 lookup offshore
+PostUp = ip rule add from 10.2.253.0/24 lookup main preference 1000
+
+# NETMAP Shadow Network (10.2.168.x -> 192.168.1.x)
+PostUp = iptables -t nat -A PREROUTING -i %i -d 10.2.168.0/24 -j NETMAP --to 192.168.1.0/24
+PostUp = iptables -t nat -A POSTROUTING -o %i -s 192.168.1.0/24 -j NETMAP --to 10.2.168.0/24
+PostUp = ip route add local 10.2.168.0/24 dev lo
+
+# Forwarding & NAT
+PostUp = iptables -t nat -A POSTROUTING -s 192.168.1.0/24 -o %i -j MASQUERADE
+PostUp = iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
+PostUp = iptables -A FORWARD -i %i -o eth0 -j ACCEPT
+PostUp = iptables -A FORWARD -i eth0 -o %i -m state --state RELATED,ESTABLISHED -j ACCEPT
+
+# System Kernel Options
+PostUp = sysctl -w net.ipv4.ip_forward=1
+PostUp = sysctl -w net.ipv4.conf.all.rp_filter=0
+PostUp = sysctl -w net.ipv4.conf.eth0.rp_filter=0
+PostUp = sysctl -w net.ipv4.conf.%i.rp_filter=0
+
+# --- PEERS ---
+[Peer]
+# Site 10.1: US Hub / VPS Exit
+PublicKey = QZCvR3N1CdUabC2xWfc1lmYKHfSiXYs1UoVINIMftws=
+Endpoint = gg-si1.wgnode.com:51820
+AllowedIPs = 172.24.0.0/16, 10.0.0.0/8, 0.0.0.0/0
+PersistentKeepalive = 25
+
+[Peer]
+# Site 10.5: Netherlands Offshore Exit Node
+PublicKey = MlF6h3YI1MIvOlgyNozCMoa/rICoLNtc7r/pseKiHQQ=
+Endpoint = nl-alexhost.wgnode.com:51871
+AllowedIPs = 172.24.0.5/32, 10.5.0.0/16, 0.0.0.0/0
+PersistentKeepalive = 25
+```
+
+### Site 10.5 (Netherlands Exit Node) Gateway Reference (`wg0.conf`)
+```ini
+[Interface]
+Address = 172.24.0.5/32
+PrivateKey = <SITE_10_5_PRIVATE_KEY>
+ListenPort = 51871
+
+PostUp = ip addr add 10.5.0.1/16 dev %i
+PostUp = iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
+# Dynamic Return Path Masquerading (SOURCENAT)
+PostUp = iptables -t nat -A POSTROUTING -o %i ! -s 172.24.0.0/13 -j MASQUERADE
+PostUp = sysctl -w net.ipv4.ip_forward=1
+
+[Peer]
+# Site 10.2: Staten Island LAN
+PublicKey = AsS7aikCUrXpdfSvwFnMs0yUaoQ7ZCkoUVOmNdl7NS8=
+AllowedIPs = 172.24.0.2/32, 10.2.0.0/16
+
+[Peer]
+# Site 10.1: US Hub VPS
+PublicKey = QZCvR3N1CdUabC2xWfc1lmYKHfSiXYs1UoVINIMftws=
+AllowedIPs = 172.24.0.1/32, 10.1.0.0/8
 ```
 
 ---
 
-## 5. Site Configuration Schema (`/config/sso-secrets.js`)
-
-```javascript
-module.exports = {
-  stack: {
-    siteName: 'site-b-chicago',
-    siteSlug: 'site-b-chicago',
-    role: 'spoke', // 'master' or 'spoke'
-    masterUrl: 'https://sso.site-a.example.com',
-    localUrl: 'https://sso.site-b.example.com',
-    ldapsHost: 'sso-manager',
-  },
-  replication: {
-    syncIntervalMs: 5000,
-    catalogSyncPath: '/api/directory-admin/sync/catalog',
-    auditIngestPath: '/api/directory-admin/audit/ingest',
-  }
-};
-```
-
----
-
-## 6. Implementation Phasing Plan
-
-1. **Phase 1 (v1.50.0)**: Add `site.role` configuration, catalog read-only enforcement on Spokes, transparent write proxying, and `SITE_SLUG` filtering for `jump-host`.
-2. **Phase 2 (v1.51.0)**: Implement local OIDC JWT issuance on Spokes with JWKS cross-site validation and background secret version mirror worker.
-3. **Phase 3 (v1.52.0)**: Add Spoke-to-Master non-canonical audit log shipping worker and UI `god_admin` Master promotion workflow.
-
----
-
-*Document generated and committed to codebase under [`docs/MULTI_SITE_SPEC.md`](file:///home/william/dev/theta42/theta-env/docs/MULTI_SITE_SPEC.md).*
+*Final Architecture Specification committed under [`docs/MULTI_SITE_SPEC.md`](file:///home/william/dev/theta42/theta-env/docs/MULTI_SITE_SPEC.md).*
