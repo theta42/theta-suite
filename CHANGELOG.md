@@ -8,6 +8,15 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [sso-manager-node](https://github.com/theta42/sso-manager-node/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v2.0.0] - 2026-08-09
+
+Rolls up **sso-manager-node v2.0.0**, **theta-agent v2.0.0**, **jump-host v2.0.0**.
+
+### Added
+- **Theta Gateway (\`jump-host\` v2.0.0)**: WireGuard mesh exit node management, QR code profiles, \`.conf\` file downloads, and automatic X25519 keypair bootstrap.
+- **Theta Agent (v2.0.0)**: System tray status companion badge, systemd logind desktop session detection, and real-time CPU / disk / process telemetry stream.
+- **SSO Directory (\`sso-manager-node\` v2.0.0)**: Live telemetry dashboard cards, desktop session power controls (lock, display off, logout, sleep), and site reconciler.
+
 ## [v1.48.0] - 2026-08-08
 
 Rolls up **sso-manager-node v1.33.0**, **theta-agent v1.8.0**, **proxy v1.35.1**, **jump-host v1.19.1**.
