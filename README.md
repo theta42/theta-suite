@@ -1,44 +1,28 @@
-# Theta Suite
+# Theta Suite 2.0
 
-Theta Suite is your one-line solution to replacing fragmented, hard-to-wire
-authentication setups with a unified security stack. It wires together OIDC
-authentication, LDAP user directories, automated host enrollment, and
-centralized secret management in a single command. It eliminates the manual
-configuration friction so you get secure access, auditability, and multi-site
-replication running in seconds.
-It composes four applications around a shared [OpenBao](https://openbao.org/)
-secrets store, brought up with one command:
+Theta Suite 2.0 is your production-grade, single-command solution for replacing fragmented identity, gateway, and host management setups with a unified zero-trust infrastructure stack. It seamlessly integrates OIDC identity, LDAP directories, automated host enrollment, WireGuard mesh routing, and centralized secret management in one command.
 
-- **[SSO Manager](https://github.com/theta42/sso-manager-node)** — an OIDC
-  provider with a built-in LDAP directory (OpenLDAP) and a web UI for managing
-  users, groups, and OAuth clients.
-- **[theta42/proxy](https://github.com/theta42/proxy)** — an OIDC-protected
-  reverse proxy (OpenResty) that puts any of your apps behind SSO login and can
-  look users up directly in LDAP.
-- **[Jump Host](https://github.com/theta42/jump-host)** — directory-driven SSH
-  access to your machines through one public entry point.
-- **[ldap-client](https://github.com/theta42/ldap-client)** — enrolls Linux
-  hosts into the directory for PAM/SSSD login, sudo, and SSH keys.
+Theta Suite composes core applications around a shared [OpenBao](https://openbao.org/) secrets store, brought up with a single `./setup.sh`:
 
-All four load their secrets from OpenBao at boot; `setup.sh` automates the
-first-run glue so they find each other and the secrets store.
+- **[Theta Directory](https://github.com/theta42/sso-manager-node)** — an OIDC provider with a built-in OpenLDAP directory, resource catalog, IAM group access controls, and administrative web console.
+- **[Theta Gateway](https://github.com/theta42/jump-host)** — directory-driven SSH access gateway and integrated WireGuard mesh network router with site-aware target filtering and NETMAP shadow subnets.
+- **[Theta Agent](https://github.com/theta42/theta-agent)** — lightweight multi-platform host telemetry and desktop control agent for Linux (amd64, arm64, armv7), macOS (Intel, Apple Silicon), and Windows.
+- **[Theta Proxy](https://github.com/theta42/proxy)** — an OIDC-protected reverse proxy (OpenResty) that puts web applications behind directory authentication with direct LDAP user lookups.
+- **[ldap-client](https://github.com/theta42/ldap-client)** — enrolls Linux hosts into the directory for PAM/SSSD login, sudo, and SSH keys.
+
+All applications load their secrets from OpenBao at boot; `./setup.sh` automates the first-run glue so components discover each other and the secrets engine automatically.
 
 **Site:** [https://theta42.github.io/theta-suite/](https://theta42.github.io/theta-suite/)
 
 ## Screenshots
 
-The SSO Manager and the proxy it fronts, both stood up by one `./setup.sh` run:
+The Theta Directory and Theta Proxy, stood up by one `./setup.sh` run:
 
-| SSO Manager Dashboard | Proxy Hosts |
+| Theta Directory Dashboard | Proxy Hosts |
 | --- | --- |
-| [![SSO Manager dashboard](docs/images/sso-dashboard.png)](docs/images/sso-dashboard.png) | [![Proxy host list](docs/images/proxy-hosts.png)](docs/images/proxy-hosts.png) |
+| [![Theta Directory dashboard](docs/images/sso-dashboard.png)](docs/images/sso-dashboard.png) | [![Proxy host list](docs/images/proxy-hosts.png)](docs/images/proxy-hosts.png) |
 
-## Configuration
-
-`setup.sh` automates the first-run glue between subprojects:
-- Asks for your domain once (in `setup.env`) and fills it in across all config files.
-- Registers the proxy as an OIDC client of the SSO.
-- Persists submodule commit hashes in `.env` for reproducibility (e.g., `SSO_GIT_COMMIT`, `PROXY_GIT_COMMIT`). This ensures future `docker compose` runs use the same submodule versions.
+## System Architecture
 
 ```
           ┌───────────────────────────────────────────────────────────┐
@@ -48,16 +32,16 @@ The SSO Manager and the proxy it fronts, both stood up by one `./setup.sh` run:
             https (:443)          ssh (:2222)        ldaps (:636)
                   │                     │                  │
          ┌────────▼─────────┐  ┌────────▼──────────┐       │
-         │  proxy           │  │  jump-host        │       │
-         │  OpenResty       │  │  sshd :2222       │       │
-         │  :80/:443/:4443  │  │  web UI :3002     │       │
+         │  theta-proxy     │  │  theta-gateway    │       │
+         │  OpenResty       │  │  SSH Gateway      │       │
+         │  :80/:443/:4443  │  │  WireGuard Mesh   │       │
          │  mgmt app :3000  │  └────────┬──────────┘       │
          └────────┬─────────┘           │ OIDC + LDAP      │
-                  │ http:3001 (internal)│ via sso-manager  │
+                  │ http:3001 (internal)│ via theta-directory
                   ▼                     ▼                  ▼
         ┌───────────────────────────────────────────────────────┐
-        │  sso-manager   (Express + OpenLDAP + Redis)           │
-        │  OIDC provider + LDAP directory                       │
+        │  theta-directory (Express + OpenLDAP + Redis)         │
+        │  OIDC provider + LDAP directory + Resource Catalog    │
         │  web UI :3001 (internal)   ldaps :636 (published)     │
         └───────────────────────────────────────────────────────┘
                           ▲  loads secrets at boot (scoped token each)
