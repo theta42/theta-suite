@@ -1,7 +1,7 @@
 ---
 layout: default
 title: API Tokens
-description: A plain-language guide to personal access tokens in SSO Manager.
+description: A plain-language guide to personal access tokens in Theta Directory.
 ---
 
 # API Tokens

@@ -28,13 +28,13 @@ nav:
   - title: Secrets
     page: /secrets.html
     icon: fa-key
-  - title: SSO Manager
+  - title: Theta Directory
     page: /sso/
     icon: fa-users
-  - title: Proxy
+  - title: Theta Proxy
     page: /proxy/
     icon: fa-shield-halved
-  - title: Jump Host
+  - title: Theta Gateway
     page: /jump-host/
     icon: fa-terminal
   - title: Changelog

@@ -6,7 +6,7 @@ description: Managing your Home-Lab infrastructure, services, and LDAP access re
 
 # Directory Management
 
-The SSO Manager ships with a built-in **Directory & Inventory Management** feature. Instead of just managing bare LDAP groups for your homelab, the Directory allows you to map out your infrastructure graph and assign rich metadata to your services.
+Theta Directory ships with a built-in **Directory & Inventory Management** feature. Instead of just managing bare LDAP groups for your homelab, the Directory allows you to map out your infrastructure graph and assign rich metadata to your services.
 
 ## Architecture
 
@@ -18,11 +18,11 @@ There are three primary **Kinds** of resources you can define:
 - **Service (App)**: An application, web service. A Service **must** have a parent Host or another Service.
 - **OAuth Integration**: An OAuth 2.0 / OpenID Connect client application. An OAuth integration **must** have a parent Service.
 
-By defining this hierarchy, the SSO Manager builds a queryable graph of your infrastructure.
+By defining this hierarchy, Theta Directory builds a queryable graph of your infrastructure.
 
 ## Automatic LDAP Group Creation
 
-When you create a new **Host** or **Service** in the Directory via the web UI (or API), the SSO Manager will automatically provision two LDAP groups in your directory to govern access to that resource:
+When you create a new **Host** or **Service** in the Directory via the web UI (or API), Theta Directory will automatically provision two LDAP groups in your directory to govern access to that resource:
 
 1. `<slug>_access` (Member level access)
 2. `<slug>_admin` (Owner level access)
@@ -84,7 +84,7 @@ The Directory Management interface provides a **Tree View** toggle that visually
 
 ## Slug conventions
 
-Slugs are the stable identifiers automation keys off, so the tooling around the SSO Manager follows a shared convention:
+Slugs are the stable identifiers automation keys off, so the tooling around Theta Directory follows a shared convention:
 
 - **Sites**: `site_<name>` — e.g. `site_local`, `site_us-east`
 - **Hosts**: `host_<hostname>` — e.g. `host_pve1`, `host_web01`
@@ -102,7 +102,7 @@ You don't have to build the graph by hand — the theta42 tooling registers itse
 
 - a **site** (name from `CFG_SITE_NAME` in `setup.env`, default `local` → slug `site_local`) marked as the current site
 - the **host** the stack runs on (`host_<hostname>`), with IP, MAC address, OS, and kernel collected from the machine
-- the **services** it composes — SSO Manager, Proxy (management UI), OpenLDAP Directory (the LDAPS endpoint Linux hosts and LDAP-native apps bind to), and OpenResty Edge (the 80/443 data plane) — each with its address, internal port, and git repo
+- the **services** it composes — Theta Directory, Proxy (management UI), OpenLDAP Directory (the LDAPS endpoint Linux hosts and LDAP-native apps bind to), and OpenResty Edge (the 80/443 data plane) — each with its address, internal port, and git repo
 - the proxy's auto-registered **OAuth client**, linked under its service
 
 The seed is idempotent and non-destructive: a resource whose slug already exists is considered operator-owned — the seed only fills in metadata fields you haven't set, and never overwrites your values.

@@ -5,7 +5,7 @@ title: Geo-Location Scaling (Replication)
 
 # Geo-Location Scaling (Replication)
 
-SSO Manager is built to be a self-contained identity provider, but if you have multiple physical sites, you may want a local copy of the directory at each site to ensure low latency and high availability.
+Theta Directory bundles its own identity provider, but if you have multiple physical sites, you may want a local copy of the directory at each site to ensure low latency and high availability.
 
 ## Why and when to use this?
 - **High Availability (HA)**: If your primary site goes completely offline, your other sites can still authenticate users locally without depending on a WAN link.

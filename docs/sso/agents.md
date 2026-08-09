@@ -6,7 +6,7 @@ nav_order: 5
 
 # Discovery Agents
 
-The SSO Manager supports a robust agent architecture for auto-discovering devices, hosts, and services across your home lab or data center. Agents run on a scheduled cron and feed their data into a central **Reconciliation Engine** that smartly merges information based on MAC addresses and IPs.
+Theta Directory supports a robust agent architecture for auto-discovering devices, hosts, and services across your home lab or data center. Agents run on a scheduled cron and feed their data into a central **Reconciliation Engine** that smartly merges information based on MAC addresses and IPs.
 
 ## Writing a Custom Agent
 

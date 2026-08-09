@@ -1,7 +1,7 @@
 ---
 layout: default
 title: LDAP
-description: SSO Manager's bundled OpenLDAP directory — schema, service accounts, TLS, and connecting third-party apps directly.
+description: Theta Directory's bundled OpenLDAP directory — schema, service accounts, TLS, and connecting third-party apps directly.
 ---
 
 # LDAP Directory
@@ -12,7 +12,7 @@ description: SSO Manager's bundled OpenLDAP directory — schema, service accoun
 > instead of schema/attribute detail? See
 > [Accounts, Groups & Managers](concepts-accounts.html).
 
-SSO Manager runs an OpenLDAP directory holding your users and groups. The app
+Theta Directory runs an OpenLDAP directory holding your users and groups. The app
 authenticates against it over `localhost:389` (inside the all-in-one container)
 and exposes **LDAPS** (`ldaps://…:636`, TLS) for anything that binds LDAP
 directly — Linux hosts (PAM/SSSD, sudo rules, SSH keys), Gitea, Emby, the
@@ -167,8 +167,8 @@ internal-only patterns and set `conf.ldap.ldapsHost` (or
 
 ### 1. Same Docker / local network host (best for apps on this machine)
 
-If the LDAP client runs on the same Docker network as the SSO Manager (for
-example, the bundled `theta-env` stack), use the internal service name:
+If the LDAP client runs on the same Docker network as Theta Directory (for
+example, the bundled `theta-suite` stack), use the internal service name:
 
 ```
 ldaps://sso-manager:636

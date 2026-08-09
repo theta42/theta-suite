@@ -1,20 +1,20 @@
 ---
 layout: default
 title: Connecting Apps (Single Sign-On)
-description: A plain-language guide to OAuth/OIDC clients and single sign-on in SSO Manager.
+description: A plain-language guide to OAuth/OIDC clients and single sign-on in Theta Directory.
 ---
 
 # Connecting Apps (Single Sign-On)
 
 This page explains, in plain language, what happens when you "connect" an
-app to your SSO Manager so people can log into it with their existing
+app to Theta Directory so people can log into it with their existing
 account. For the technical endpoint/token detail, see the
 [OAuth reference](oauth.html).
 
 ## What does "single sign-on" actually mean?
 
 Instead of every app you run having its own separate list of usernames and
-passwords, they all check with this SSO Manager instead. You log in once,
+passwords, they all check with Theta Directory instead. You log in once,
 here, and any connected app trusts that login — no separate password to
 remember or manage for each one. If you ever need to lock someone out
 everywhere at once, you do it in one place (deactivate their account here)
@@ -33,11 +33,11 @@ gives you a **Client ID** and **Client Secret**: think of these like a
 username and password, but for the *app itself* rather than for a person.
 You paste them into the other app's own "Single Sign-On" or "OIDC" setup
 screen, along with the discovery URL shown at the top of this page, and
-that app is now able to ask this SSO Manager to authenticate people on its
+that app is now able to ask Theta Directory to authenticate people on its
 behalf.
 
 **Treat the Client Secret like a password** — anyone who has it can
-impersonate that app when talking to your SSO Manager. If you ever suspect
+impersonate that app when talking to Theta Directory. If you ever suspect
 it's leaked, rotate it from the client's card.
 
 ## What are "scopes"?
@@ -50,13 +50,13 @@ setup instructions; when in doubt, the default set (`openid`, `profile`,
 
 ## "Restrict to Groups"
 
-By default, *any* account with an SSO Manager login can sign into a
+By default, *any* account with a Theta Directory login can sign into a
 connected app. If that's not what you want — say, a home automation
 dashboard that only certain family members should reach — set **Restrict
 to Groups** on that client to one of your [groups](concepts-accounts.html).
 Only members of that group will be allowed to log into that particular
 app; everyone else gets turned away at the login step, even though their
-SSO Manager account still works everywhere else.
+Theta Directory account still works everywhere else.
 
 ## Redirect URIs
 
