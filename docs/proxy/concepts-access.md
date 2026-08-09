@@ -22,7 +22,7 @@ There are two ways someone gets into the proxy's own management UI:
 
 - **A local account**, created on the **Users** page — a username and
   password specific to this app.
-- **Single sign-on**, if you've connected this proxy to an SSO Manager (or
+- **Single sign-on**, if you've connected this proxy to Theta Directory (or
   another OIDC provider) — the same login your other connected apps use.
 
 Either way, once logged in, what they're actually *allowed to do* here is

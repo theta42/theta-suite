@@ -5,8 +5,29 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions
 correspond to git tags (`vX.Y.Z`). Entries here cover theta-suite's own
 orchestration code; see each submodule's own `CHANGELOG.md`
 ([proxy](https://github.com/theta42/proxy/blob/master/CHANGELOG.md),
-[sso-manager-node](https://github.com/theta42/sso-manager-node/blob/master/CHANGELOG.md))
+[theta-directory](https://github.com/theta42/theta-directory/blob/master/CHANGELOG.md),
+[jump-host](https://github.com/theta42/jump-host/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
+
+## [v2.0.2] - 2026-08-09
+
+Rolls up **theta-directory v2.0.2**, **proxy v2.0.1**, **jump-host v2.0.1**. Unifies the GitHub Pages docs site: the SSO/Proxy/Jump Host pages, their nav labels, and each component's own README now consistently say Theta Directory / Theta Proxy / Theta Gateway, drop marketing sections ("Why this over the alternatives", "Get it", "Related projects") that don't apply to a suite component, remove every standalone/bare-metal install path, and link to `theta42.github.io/theta-suite/...` instead of the old per-repo Pages sites.
+
+### theta-directory v2.0.2
+- **README rebranding & standalone-install cleanup.** Removed the "Why this over the alternatives" section and stale links to the old per-repo GitHub Pages site (`theta42.github.io/sso-manager-node/`); documentation and secrets links now point at the unified `theta42.github.io/theta-suite/` site. Made explicit that Theta Directory is deployed as part of Theta Suite and isn't installed or run on its own. Added the agent capability/install screenshots to the gallery.
+- **Docs site (`docs/sso/`)**: full rewrite of the landing page — dropped "Why this over the alternatives" / "Get it" / "Related projects", refreshed all screenshots, added the two agent screenshots, and swept "SSO Manager" → "Theta Directory" across every sub-page (configuration, OAuth, LDAP, directory, agents, replication, vault, concepts-*).
+
+### proxy v2.0.1
+- Finishes the pending v2.0.0 Docker-only rewrite (README's Quick start already trimmed to one Docker Compose path via Theta Suite).
+- Removed "Why this over the alternatives"; trimmed Requirements to actual Docker-host requirements (was still listing bare-metal items: root access, directly-installed OpenResty/Redis).
+- Fixed stale links to the old per-repo GitHub Pages site; synced `package-lock.json`'s version (missed by the earlier 2.0.0 bump commit).
+- Docs site (`docs/proxy/`): renamed to Theta Proxy, dropped the same three sections, refreshed screenshots, relative links within the unified site. Deleted a stale `docs/proxy/README.md` meta-doc left over from when this repo had its own separate Pages site (wrong live URL, referenced a deleted `installation.md`).
+
+### jump-host v2.0.1
+- Rebranded docs to Theta Gateway (matches the repo's own README/package.json naming).
+- Removed the "Standalone Docker" and "Bare metal" install paths, which contradicted the Deployment section's own "exclusively via Docker Compose within Theta Suite" claim.
+- Fixed stale links to the old per-repo GitHub Pages sites.
+- Docs site (`docs/jump-host/`): same section removal, added a WireGuard mesh-routing feature bullet, refreshed screenshots, fixed three more stale absolute links in `architecture.md`. Deleted the same kind of stale `docs/jump-host/README.md` meta-doc.
 
 ## [v2.0.1] - 2026-08-09
 

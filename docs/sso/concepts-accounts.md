@@ -1,7 +1,7 @@
 ---
 layout: default
 title: Accounts, Groups & Managers
-description: A plain-language guide to users, service accounts, personal groups, and managers in SSO Manager.
+description: A plain-language guide to users, service accounts, personal groups, and managers in Theta Directory.
 ---
 
 # Accounts, Groups & Managers
@@ -12,7 +12,7 @@ see the [LDAP reference](ldap.html).
 
 ## What's an account?
 
-Every person (or app) that can sign in through this SSO Manager has an
+Every person (or app) that can sign in through Theta Directory has an
 **account** — a username, a display name, maybe an email address, and a
 password (or, for service accounts, no password at all — see below).
 Accounts live in the directory this app manages, and any other app you've

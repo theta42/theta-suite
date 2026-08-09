@@ -56,8 +56,8 @@ name → IP → address hostname. A raw IP that isn't an accessible directory ho
 is refused unless explicitly allowed.
 
 > The directory auto-creates `<slug>_access` / `<slug>_admin` groups for every
-> host and service (see the SSO's
-> [Directory & Inventory](https://theta42.github.io/sso-manager-node/directory.html)
+> host and service (see Theta Directory's
+> [Directory & Inventory](../sso/directory.html)
 > docs), which is exactly what this authorization reads.
 
 ## 3. Upstream Authentication (PKI or LDAP Keys) {#upstream-authentication}
@@ -96,7 +96,7 @@ Byte counts per direction are tallied cheaply for the audit record.
 ## Web UI, API & audit
 
 An Express + EJS + Bootstrap app on `:3002` — the same front-end stack and
-look/feel as the SSO Manager and Proxy. Login is OIDC against the SSO plus a
+look/feel as Theta Directory and Theta Proxy. Login is OIDC against the SSO plus a
 local anti-lockout admin (`auth.adminUsers`), with admin access gated by
 `auth.adminGroups`. It exposes:
 
@@ -111,12 +111,12 @@ success + failure reason, downstream host-key fingerprint, timing, and bytes in/
 
 ## Where it sits in the stack
 
-- **[SSO Manager](https://theta42.github.io/sso-manager-node/)** — provides the
+- **[Theta Directory](../sso/)** — provides the
   OpenLDAP directory (users, groups, `sshPublicKey`) and the inventory API this
   jump host reads.
 - **[ldap-client](https://github.com/theta42/ldap-client)** — enrolls the
   downstream Linux hosts (SSSD/PAM + `AuthorizedKeysCommand`) that the jump host
   connects into.
-- **[Proxy](https://theta42.github.io/proxy/)** — fronts the jump host's web UI
+- **[Theta Proxy](../proxy/)** — fronts the jump host's web UI
   under TLS.
-- **[theta-env](https://theta42.github.io/theta-env/)** — wires it all together.
+- **theta-suite** — wires it all together.
