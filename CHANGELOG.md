@@ -8,6 +8,16 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [sso-manager-node](https://github.com/theta42/sso-manager-node/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v2.0.1] - 2026-08-09
+
+Rolls up **sso-manager-node v2.0.1** and **theta-agent v2.0.1**.
+
+### Added
+- **Non-Root Secrets Group Access**: Set up `theta-secrets` and `theta` system groups in `setup.sh` and set permission flags to `0750` on `/etc/theta42` and `0640` on `agent.yml` to allow non-root users in the group to request secrets.
+- **Autostart Tray Icon Companion**: Configured `/etc/xdg/autostart/theta-agent-tray.desktop` in `setup.sh` to automatically launch the desktop tray icon companion.
+- **OpenBao / OpenBoa Resource Exclusion**: Skipped internal secret/renewer services from populating the directory resources catalogue.
+- **Full Docker Integration Tests**: Rewrote the integration test runner (`test-integration.sh`) to support full env-mode LDAP seeding (`seed-test-user.sh`) and pass test environment configs/parameters reliably inside Docker containers.
+
 ## [v2.0.0] - 2026-08-09
 
 Rolls up **sso-manager-node v2.0.0**, **theta-agent v2.0.0**, **jump-host v2.0.0**.

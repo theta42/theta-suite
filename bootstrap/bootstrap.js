@@ -645,7 +645,7 @@ async function seedDirectory(token, clientId, jumpClientId) {
 	// Remove or set ignored on OpenBao/bao-renewer seed resources if present — OpenBao is an
 	// internal stack service, not a user-facing published directory service.
 	for (const r of resources) {
-		if (r.slug === 'openbao' || r.slug === 'bao-renewer' || (r.name && r.name.includes('openbao')) || (r.name && r.name.includes('bao-renewer'))) {
+		if (r.slug === 'openbao' || r.slug === 'openboa' || r.slug === 'bao-renewer' || (r.name && (/openbao|openboa|bao-renewer/i.test(r.name)))) {
 			await dirDelete(token, `resources/${r.id}`).catch(() => {});
 		}
 	}

@@ -1307,18 +1307,40 @@ if [[ "$CFG_THETA_AGENT_ENABLE" == "1" ]]; then
 						warn "No agent join key available — /etc/theta42/agent.yml has no credential and the agent will not connect."
 					fi
 					# We want to connect to either https or http depending on CFG_CREATE_ALL_HTTP
-					if [[ "${CFG_CREATE_ALL_HTTP:-0}" == "1" ]]; then
-						sudo sed -i "s|https://sso.example.com|http://${SSO_HOST}|" /etc/theta42/agent.yml
-					else
-						sudo sed -i "s|https://sso.example.com|https://${SSO_HOST}|" /etc/theta42/agent.yml
-					fi
-					sudo chmod 600 /etc/theta42/agent.yml
+					sudo getent group theta-secrets >/dev/null 2>&1 || sudo groupadd -r theta-secrets 2>/dev/null || true
+					sudo getent group theta >/dev/null 2>&1 || sudo groupadd -r theta 2>/dev/null || true
+					SECRETS_GRP="root"
+					if getent group theta-secrets >/dev/null 2>&1; then SECRETS_GRP="theta-secrets"; elif getent group theta >/dev/null 2>&1; then SECRETS_GRP="theta"; fi
+					sudo chown -R "root:$SECRETS_GRP" /etc/theta42 2>/dev/null || true
+					sudo chmod 750 /etc/theta42
+					sudo chmod 640 /etc/theta42/agent.yml
 				fi
 				# Stop a running agent before overwriting its binary (cp into a
 				# running executable fails with "Text file busy" on a re-install).
 				sudo systemctl stop theta-agent.service 2>/dev/null || true
 				sudo cp theta-agent-linux-amd64 /usr/local/bin/theta-agent
 				sudo chmod +x /usr/local/bin/theta-agent
+
+				# Install desktop tray companion if available
+				TRAY_SRC="dist/theta-agent-tray-linux-amd64"
+				if [[ ! -f "$TRAY_SRC" ]] && [[ -f "theta-agent-tray-linux-amd64" ]]; then TRAY_SRC="theta-agent-tray-linux-amd64"; fi
+				if [[ -f "$TRAY_SRC" ]]; then
+					sudo cp "$TRAY_SRC" /usr/local/bin/theta-agent-tray
+					sudo chmod +x /usr/local/bin/theta-agent-tray
+					sudo mkdir -p /etc/xdg/autostart
+					sudo bash -c "cat <<'EOF' > /etc/xdg/autostart/theta-agent-tray.desktop
+[Desktop Entry]
+Type=Application
+Name=Theta Agent Tray
+Comment=Theta Agent Desktop Tray Companion
+Exec=/usr/local/bin/theta-agent-tray
+Icon=network-workgroup
+Terminal=false
+Categories=Utility;System;
+X-GNOME-Autostart-enabled=true
+EOF"
+					info "  theta-agent-tray companion installed."
+				fi
 
 				sudo bash -c "cat <<'EOF' > /etc/systemd/system/theta-agent.service
 [Unit]
