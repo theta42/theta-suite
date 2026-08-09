@@ -1,38 +1,32 @@
 ---
 layout: default
 title: Architecture
-description: How theta-suite composes the SSO Manager, proxy, jump host, and ldap-client around a shared OpenBao secrets store — the OIDC/LDAP/secrets wiring setup.sh generates from one domain.
+description: How Theta Suite 2.0 composes Theta Directory, Theta Gateway, Theta Proxy, and Theta Agent around a shared OpenBao secrets store — the zero-trust identity, mesh gateway, and telemetry architecture.
 ---
 
 # Architecture
 
 [← Back to Home](index.html)
 
-theta-suite is a **composition** repo: it builds four applications from their
-git submodules and adds the glue that wires them together — plus a shared
-[OpenBao](https://openbao.org/) secrets store — on one Docker network. It
-does not fork or patch the components; it composes and configures them.
+Theta Suite 2.0 is a production-grade **composition repository**: it composes applications from git submodules and provides the automated first-run orchestration, secrets initialization, and container networking for a complete zero-trust infrastructure stack.
 
 ---
 
-## Components
+## Core Infrastructure Components
 
-| Repo / image | Role |
+| Subproject / Image | Component Role |
 |------|------|
-| [`theta42/sso-manager-node`](https://github.com/theta42/sso-manager-node) | OIDC provider + OpenLDAP directory + web UI. All-in-one image (`Dockerfile.openldap`). |
-| [`theta42/proxy`](https://github.com/theta42/proxy) | OIDC-protected reverse proxy (OpenResty + Node mgmt app + Redis). All-in-one image (`Dockerfile`). |
-| [`theta42/jump-host`](https://github.com/theta42/jump-host) | Directory-driven SSH jump host (sshd + Node web UI). Image (`Dockerfile`). |
-| [`theta42/ldap-client`](https://github.com/theta42/ldap-client) | Enrolls real Linux hosts into the directory (SSSD + AuthorizedKeysCommand). Also the opt-in `ldap-test-host` fixture. |
-| `quay.io/openbao/openbao` | Central secrets store (Vault fork), KV-v2 at `secret/`. |
-| `theta42/theta-suite` (this repo) | Composes all of the above on one network + automates first-run wiring. |
-
-The four applications are pinned as **git submodules**; OpenBao uses the
-upstream image. `git clone --recursive` fetches the submodules in one step;
-`git submodule update --remote` bumps them.
+| [`theta42/theta-directory`](https://github.com/theta42/theta-directory) | **Theta Directory** — OIDC provider + OpenLDAP directory + Resource Catalog + Web Admin Console. All-in-one container. |
+| [`theta42/jump-host`](https://github.com/theta42/jump-host) | **Theta Gateway** — Directory-driven SSH access gateway and WireGuard mesh router with NETMAP shadow subnets. |
+| [`theta42/theta-agent`](https://github.com/theta42/theta-agent) | **Theta Agent** — Multi-platform host telemetry, hardware details, desktop session controls, and secret delivery agent. |
+| [`theta42/proxy`](https://github.com/theta42/proxy) | **Theta Proxy** — OIDC-protected reverse proxy (OpenResty + Node management app + Redis). |
+| [`theta42/ldap-client`](https://github.com/theta42/ldap-client) | **ldap-client** — Enrolls real Linux hosts into the directory for PAM/SSSD login, sudo rules, and SSH keys. |
+| `quay.io/openbao/openbao` | **OpenBao** — Central secrets engine (Vault fork), KV-v2 versioned store at `secret/`. |
+| `theta42/theta-suite` (this repo) | Composes all components on a single Docker network + automates `./setup.sh` first-run wiring. |
 
 ---
 
-## The stack
+## Architecture Stack
 
 ```
           ┌──────────────────────────────────────────────────────────┐
@@ -42,17 +36,17 @@ upstream image. `git clone --recursive` fetches the submodules in one step;
             https (:443)          ssh (:2222)        ldaps (:636)
                   │                     │                  │
          ┌────────▼────────┐  ┌──────────▼────────┐         │
-         │  proxy           │  │  jump-host        │         │
-         │  OpenResty       │  │  sshd :2222       │         │
-         │  :80/:443/:4443  │  │  web UI :3002     │         │
+         │  theta-proxy     │  │  theta-gateway    │         │
+         │  OpenResty       │  │  SSH Gateway      │         │
+         │  :80/:443/:4443  │  │  WireGuard Mesh   │         │
          │  mgmt app :3000  │  └────────┬──────────┘         │
          └────────┬─────────┘           │ OIDC + LDAP        │
-                  │ http:3001 (internal)│ via sso-manager    │
-                  ▼                     ▼                    ▼
+                  │ http:3001 (internal)│ via theta-directory
+                  ▼                     ▼                  ▼
         ┌───────────────────────────────────────────────────────┐
-        │  sso-manager   (Express + OpenLDAP + Redis)            │
-        │  OIDC provider + LDAP directory                         │
-        │  web UI :3001 (internal)   ldaps :636 (published)       │
+        │  theta-directory (Express + OpenLDAP + Redis)         │
+        │  OIDC provider + LDAP directory + Resource Catalog    │
+        │  web UI :3001 (internal)   ldaps :636 (published)     │
         └───────────────────────────────────────────────────────┘
                           ▲  loads secrets at boot (scoped token each)
               ┌───────────┴───────────────────┐
