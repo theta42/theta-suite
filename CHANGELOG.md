@@ -9,6 +9,19 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [jump-host](https://github.com/theta42/jump-host/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v2.1.1] - 2026-08-10
+
+Fresh-install fixes for the v2.1.0 Windows rollout.
+
+### theta-agent v2.1.1
+- **Silent installs wrote an empty `server_url`.** `CurPageChanged` fires even when the wizard is walked programmatically in silent mode, so it read the (empty) edit boxes and clobbered the `/SERVER_URL` `/JOIN_KEY` command-line params. Now guarded with `WizardSilent()` — silent installs keep the params (this was also why the service exited at first connect and the Directory showed the agent as a placeholder version).
+- **Tray post-install launch had `skipifsilent`** — a silent install (the common path from the Directory's Windows command) never started the tray. Removed.
+- **`theta-agent update` 404'd** — it downloaded from the SSO `/resources` path, which no longer serves binaries (they are GitHub release artifacts). Pointed at `releases/latest/download/`.
+
+### theta-directory v2.1.1
+- **"Master Site" button error** (`app.modal.show is not a function`) — the multi-site status modal used the legacy `app.modal.show()` signature; now `app.modal.open({ title, bodyHtml, size })`.
+- **Agents with no discovery showed a fake `v2.0.0`** — hardcoded fallbacks now report `unknown`.
+
 ## [v2.1.0] - 2026-08-10
 
 Rolls up **theta-agent v2.1.0** and **theta-directory v2.1.0**: the theta-agent
