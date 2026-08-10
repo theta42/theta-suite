@@ -29,6 +29,13 @@ Rolls up **theta-directory v2.0.2**, **proxy v2.0.1**, **jump-host v2.0.1**. Uni
 - Fixed stale links to the old per-repo GitHub Pages sites.
 - Docs site (`docs/jump-host/`): same section removal, added a WireGuard mesh-routing feature bullet, refreshed screenshots, fixed three more stale absolute links in `architecture.md`. Deleted the same kind of stale `docs/jump-host/README.md` meta-doc.
 
+## [v2.0.4] - 2026-08-10
+
+Rolls up **theta-directory v2.0.4**.
+
+### Changed
+- **`Dockerfile.openldap` no longer compiles OpenLDAP from source.** Extracted the from-source compile (nestgroup overlay, ~5 min, dependent on `git.openldap.org` being reachable — it 502'd twice tonight, blocking two PRs) into its own image, `ghcr.io/theta42/openldap-nestgroup:<pinned commit>`, published by a new workflow whenever the pin changes. `Dockerfile.openldap`'s `ldapbuild` stage now just pulls it. Cut CI's "Build LDAP test image" step from ~5-6 minutes to ~1.5 minutes total per matrix run; every local build of this Dockerfile gets the same speedup.
+
 ## [v2.0.3] - 2026-08-09
 
 Rolls up **theta-directory v2.0.3**.
