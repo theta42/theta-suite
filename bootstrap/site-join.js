@@ -5,7 +5,13 @@
  * setup.env sets CFG_MASTER_DIRECTORY_URL + CFG_MASTER_DIRECTORY_JOIN_KEY:
  *
  *   docker compose exec sso-manager node /bootstrap/site-join.js \
- *       https://sso.master.example.com stj_9f2e...
+ *       https://sso.master.example.com stj_9f2e... https://sso.this-site.example.com
+ *
+ * The third argument (selfUrl, optional) is this site's own public SSO host
+ * (setup.sh passes https://$CFG_SSO_HOST) -- without it the join still
+ * succeeds, it just registers for one-time adoption only: the master has no
+ * way to reach this spoke to push live replication resync pings at it (see
+ * theta-directory's docs/site-join.md and utils/site_replicate.js).
  *
  * Self-contained (Node built-ins + global fetch), same rule as bootstrap.js —
  * it does NOT require the SSO's internal models. It logs in as the bootstrap
@@ -26,6 +32,7 @@ const SSO_INTERNAL    = 'http://localhost:3001';
 
 const masterUrl = process.argv[2];
 const joinKey   = process.argv[3];
+const selfUrl   = process.argv[4] || '';
 
 function log(msg) { console.error('[site-join] ' + msg); }
 
@@ -52,7 +59,7 @@ async function main() {
   const res = await fetch(`${SSO_INTERNAL}/api/site/join`, {
     method: 'POST',
     headers: { 'auth-token': token, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ masterUrl, joinKey }),
+    body: JSON.stringify({ masterUrl, joinKey, ...(selfUrl ? { selfUrl } : {}) }),
   });
   const text = await res.text().catch(() => '');
   let data = null;
@@ -68,11 +75,13 @@ async function main() {
   }
 
   log(`Joined master site ${masterUrl} as ${data.siteSlug || '?'}`);
+  log(`Live replication: ${(data.replication && data.replication.note) || 'unknown'}`);
   console.log([
     `JOINED=yes`,
     `SITE_SLUG=${data.siteSlug || ''}`,
     `RESOURCES=${(data.resources && data.resources.created) || 0}`,
-    `LDAP=${(data.ldap && data.ldap.note) || ''}`
+    `LDAP=${(data.ldap && data.ldap.note) || ''}`,
+    `LIVE_REPLICATION=${(data.replication && data.replication.live) ? 'yes' : 'no'}`
   ].join(' '));
 }
 

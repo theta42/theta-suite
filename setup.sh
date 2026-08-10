@@ -1161,8 +1161,12 @@ fi
 # joined reports "already a spoke" and setup continues.
 if [[ -n "${CFG_MASTER_DIRECTORY_URL:-}" && -n "${CFG_MASTER_DIRECTORY_JOIN_KEY:-}" ]]; then
 	info "Joining master site ${CFG_MASTER_DIRECTORY_URL} (CFG_MASTER_DIRECTORY_*)..."
+	# selfUrl (https://$CFG_SSO_HOST, already derived above) registers this
+	# spoke for LIVE replication -- without it the join still succeeds, but
+	# the master has no way to reach this spoke to push resync pings, so it
+	# only ever gets the one-time snapshot from the moment it joined.
 	if ! "${COMPOSE[@]}" exec -T sso-manager node /bootstrap/site-join.js \
-			"$CFG_MASTER_DIRECTORY_URL" "$CFG_MASTER_DIRECTORY_JOIN_KEY"; then
+			"$CFG_MASTER_DIRECTORY_URL" "$CFG_MASTER_DIRECTORY_JOIN_KEY" "https://$CFG_SSO_HOST"; then
 		die "site join failed — check the master URL + site join key (mint one on the master's Site Join Keys card)."
 	fi
 else
