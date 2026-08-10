@@ -10,8 +10,9 @@ Theta Suite is your one-line solution to replacing fragmented, hard-to-wire
 authentication setups with a unified security stack. It wires together OIDC
 authentication, LDAP user directories, automated host enrollment, and
 centralized secret management in a single command. It eliminates the manual
-configuration friction so you get secure access, auditability, and multi-site
-replication running in seconds.
+configuration friction so you get secure access, auditability, and
+[multi-site](sso/multi-site.html) replication when you need more than one
+location.
 
 ##  Who This Is For
 * **Self-Hosters & Homelab Engineers:** Anyone running local bare metal,
@@ -24,8 +25,8 @@ replication running in seconds.
   lock-in.
 * **DevOps & Systems Operators:** Engineers who value idempotent, single-command
   deployments (`./setup.sh`) and need a production-grade baseline supporting
-  zero-trust proxying, SSH jump-host access control, and multi-site replication
-  out of the box.
+  zero-trust proxying, SSH jump-host access control, and
+  [multi-site](sso/multi-site.html) replication out of the box.
 
 ## Screenshots
 
