@@ -1,18 +1,15 @@
 # Theta Suite Multi-Site Architecture & VPN Specification
 
-**Specification Version**: `2.1.0`
-**Status**: Target architecture / roadmap. **A simpler v1 is already shipped** — see the box below before reading further.
+**Specification Version**: `2.2.0`
+**Status**: Mostly shipped. Read the status table at the bottom before trusting any section's detail as current behavior — this document accumulated across several build passes and earlier sections describe things that were aspirational when written and real by the time later sections were added.
 **Target Suite Version**: `v1.50.0+`
 **Repository**: [`theta-suite`](https://github.com/theta42/theta-suite)
 
-> ## Shipped today (theta-directory v2.2.0–v2.3.0, theta-suite v2.2.0)
-> A spoke joins a master by pulling a **one-time directory export** (LDAP LDIF + resource catalog) over a **site join key**, entirely over the existing HTTPS API — no WireGuard mesh, no live replication, no OpenBao secret sync. It's simpler than everything below and it's real, tested, and released. Read [`sso-manager-node/docs/site-join.md`](https://github.com/theta42/theta-directory/blob/master/docs/site-join.md) first; it documents exactly what exists:
-> - `POST /api/site/join-keys`, `/api/site/export`, `/api/site/ping`, `/api/site/join` — mint a key on the master, pull-and-adopt on the spoke.
-> - Fresh-install-only (no merging into a populated directory).
-> - Spoke is read-only post-join (writes 403 toward the master); role persists in `/config/site.json`, survives restarts.
-> - `setup.env`'s `CFG_MASTER_DIRECTORY_URL` / `CFG_MASTER_DIRECTORY_JOIN_KEY` wire it into first-run `setup.sh`.
->
-> Everything below this point is the **larger target architecture** this session designed (WireGuard mesh, live fire-and-forget replication, identical-directory signing, no-inbound relay, mDNS local-discovery) — none of it is built, and **none of it is required** for the shipped v1 above to work. Treat it as where multi-site could grow next (continuous sync instead of one-time adoption, true site-to-site networking, spokes with no inbound path at all), not as a description of current behavior. Don't let this document's detail imply more is built than actually is — check the status table at the bottom, or better, check `git log`/the linked doc, before trusting either.
+> ## Shipped today
+> - **Join, live replication, promotion** (`sso-manager-node`): a spoke joins via a one-time export over a site join key (`POST /api/site/join-keys` / `/export` / `/join`), then registers its own endpoint so the master can push live resync pings on every catalog write — no longer a one-time snapshot. Promotion (`POST /api/directory-admin/site-promote`) coordinates a real handoff, demoting the old master as one action. Identical agent-signing keys ride the same export/resync path. Read [`sso-manager-node/docs/site-join.md`](https://github.com/theta42/theta-directory/blob/master/docs/site-join.md) and `directory_spec.md` §11 for the endpoint-level detail.
+> - **Gateway-to-gateway WireGuard mesh** (`theta-gateway`): real site-to-site tunnels via `POST /api/mesh/register`/`/join`, kernel WireGuard with a userspace `wireguard-go` fallback. Verified with an actual two-container encrypted tunnel passing traffic, not a mock.
+> - **Not yet connected to each other**: the mesh is a transport layer that exists on its own; `sso-manager-node`'s HTTPS-based join/replicate calls don't route over it yet. That wiring, plus the no-inbound relay it would enable, is the next layer — see the status table.
+> - **Not built at all**: mDNS local-discovery (speced for handoff in Appendix B; genuinely needs Windows/Mac work this environment can't do).
 
 Design scale: a handful of sites (dozen max, 254 hard ceiling — see §4), a few hundred users/hosts total. This is a deliberate, small, trusted-operator deployment, not a hyperscale/adversarial-tenant one — several decisions below (fire-and-forget replication, identical directories) trade blast-radius for simplicity *because* the scale allows it. Don't generalize these choices past that scale without re-deriving them.
 
@@ -260,10 +257,11 @@ See [`AGENT_LOCAL_DISCOVERY_SPEC.md`](./AGENT_LOCAL_DISCOVERY_SPEC.md) — split
 | Spoke read-only enforcement | **Shipped** — directory-write routes 403 toward the master once joined (v2.3.0) |
 | WAN health check | **Shipped** — `/api/site/ping`, live in the Master Site modal (v2.2.0–v2.3.0) |
 | `setup.env` / `setup.sh` join wiring | **Shipped** — `CFG_MASTER_DIRECTORY_URL` / `CFG_MASTER_DIRECTORY_JOIN_KEY`, `bootstrap/site-join.js` (theta-suite v2.2.0) |
-| Continuous/live replication (vs. one-time export-on-join) | Not built — today's join is a snapshot; a site that drifts after joining doesn't re-sync |
-| WireGuard site-to-site mesh (real tunnels, not just HTTPS) | Not built — join happens over whatever network path already reaches the master's HTTPS API |
-| Identical-directory signing key / OpenBao secret replication | Not built |
-| No-inbound-spoke relay (master proxies a spoke with no public IP) | Not built — today's join requires the spoke to reach the master's API, and vice versa for export; a spoke with zero inbound *and* zero outbound path to the master can't join at all yet |
+| Continuous/live replication (vs. one-time export-on-join) | **Shipped** (`sso-manager-node`) — a spoke registers its own endpoint at join time (`POST /api/site/spokes`), and every successful master catalog write fires a fire-and-forget push (`utils/site_replicate.js`) at every registered spoke, which re-pulls a fresh export. Verified end-to-end in `docker-compose.multisite-e2e.yml`. |
+| Identical-directory signing key | **Shipped** — `POST /api/site/export` includes the master's agent-signing key; a spoke adopts it via `agent_keys.adopt()` on join and every resync. OpenBao secret replication *beyond* this one key is still not built. |
+| Coordinated master promotion (demote the old master as one action) | **Shipped** — `POST /api/site/demote` + `site-promote`'s handoff logic. Fixed two real pre-existing bugs while wiring this in: `site-promote`'s god_admin check read a `req.user.groups` field nothing ever populated (permanently 403'd for everyone), and the read-only write-gate 403'd `site-promote` itself before the handler could run. |
+| WireGuard gateway-to-gateway mesh (`theta-gateway`) | **Shipped** — `POST /api/mesh/register`/`/join` (join-token bootstrap), `utils/wg_iface.js` (kernel WireGuard, falls back to userspace `wireguard-go`). Verified with a real two-container test: actual encrypted tunnel, real ICMP traffic across it, 0% loss. This is the mesh transport layer only — nothing in `sso-manager-node`'s replication yet routes traffic *over* it; today's site-to-site HTTPS calls (join/export/resync) still go over whatever network path already reaches the target, same as before this layer existed. |
+| No-inbound-spoke relay (master proxies a spoke with no public IP) | Not built — wiring `theta-proxy` to relay through the new WG mesh is the natural next step now that the mesh exists, but today's HTTPS-based join/replicate still requires the spoke to reach the master's API directly (and vice versa for export), so a spoke with zero inbound *and* zero outbound path still can't join. |
 | mDNS local-discovery | Not built — speced for handoff, see Appendix B (still applicable regardless of which replication mechanism eventually lands) |
 
 *Committed under [`docs/MULTI_SITE_SPEC.md`](file:///home/william/dev/theta42/theta-env/docs/MULTI_SITE_SPEC.md).*
