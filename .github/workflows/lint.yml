@@ -28,7 +28,9 @@ jobs:
         run: shellcheck -S warning setup.sh
 
   bootstrap-syntax:
-    name: Syntax check bootstrap scripts
+    # Keep this job name stable: branch protection on master requires a status
+    # check named exactly "Syntax check bootstrap.js".
+    name: Syntax check bootstrap.js
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
