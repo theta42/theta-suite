@@ -9,6 +9,46 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [jump-host](https://github.com/theta42/jump-host/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v2.3.0] - 2026-08-10
+
+Rolls up **theta-directory v2.4.0**, **jump-host v2.1.0**, **theta-agent v2.1.2**. Live catalog replication and a real gateway-to-gateway WireGuard mesh land in the same pass — multi-site directory sync stops being a one-time snapshot, and site-to-site networking becomes real infrastructure instead of a documented-but-unbuilt design. See `docs/MULTI_SITE_SPEC.md` for the full architecture and an explicit TODO list of what's still open (Windows/macOS mDNS, routing directory traffic over the mesh, `theta-proxy` no-inbound relay automation).
+
+### theta-directory v2.4.0
+
+#### Added
+- **Live catalog replication.** A spoke now stays in sync after joining instead of only getting a one-time snapshot: it registers its own endpoint with the master at join time (`POST /api/site/spokes`, Bearer the site join key), and every successful master catalog write fires a fire-and-forget push (`utils/site_replicate.js`) at every registered spoke, concurrently — one unreachable spoke never blocks or delays delivery to another. The spoke's `POST /api/site/resync` handler re-runs the same tested export-pull-and-import path used at join time rather than applying a partial diff.
+- **Identical-directory agent-signing key.** `POST /api/site/export` now best-effort includes the master's agent-signing key; a spoke adopts it via `agent_keys.adopt()` on both join and every resync, so any site's `sso-manager-node` can validly sign a command for any agent enrolled at any other site (a deliberate blast-radius tradeoff for this deployment's small, trusted scale — see `docs/MULTI_SITE_SPEC.md` §2).
+- **Coordinated master promotion.** `POST /api/directory-admin/site-promote` now demotes the previous master as part of the same action (mints it a fresh join key, calls its new `POST /api/site/demote`) instead of leaving a manual two-step gap where two nodes could both believe they're master. Best-effort: an unreachable old master never blocks the local promotion — the response's `handoff` field reports what happened.
+- **Master Site modal UI**: new "Live Replication" (spoke) / "Registered Spokes" (master) status rows; the join form gained a "this site's own reachable URL" field wired to `selfUrl`, which the join API already supported but the UI never sent; the promote button's success toast now reports the actual handoff result.
+
+#### Fixed
+- **`site-promote`'s god_admin check was dead on arrival** — it read `req.user.groups`, a field nothing in the codebase ever populates, so the check silently evaluated to an empty array on every request. Promotion returned 403 for every user, including a real god_admin, since it shipped in v2.0.0. Only surfaced by live two-container testing, not by inspection.
+- **The read-only write-gate blocked `site-promote` on a spoke** before its handler could run — the one mutating request a spoke must be able to make to itself.
+- **`GET /api/site/config` was returning live credentials** (`masterJoinKey`, `replicationPushToken`) directly to the browser on every admin session. Replaced with boolean derivatives.
+
+### jump-host v2.1.0
+
+#### Added
+- **Gateway-to-gateway WireGuard mesh** (`routes/mesh.js`) — real site-to-site tunnels between theta-gateway instances, distinct from the existing roaming-client/exit-node WireGuard feature. Join-token bootstrap, mesh-index addressing (172.24.\<idx\>.0/16 + 10.\<idx\>.0.0/16).
+- **In-kernel WireGuard with a userspace fallback** (`utils/wg_iface.js`) — prefers `ip link add type wireguard`, falls back to `wireguard-go` when the kernel module isn't available.
+- **mDNS local-discovery announcer** (`services/mdns_announce.js`) — advertises which public hostnames this site fronts so a `theta-agent` on the same LAN segment can skip the relay/WAN path.
+- **Mesh UI** (`/mesh`) — gateway identity, join-token minting, remote-join form, meshed-gateways table.
+
+Verified with real two-container tests: an actual encrypted WireGuard tunnel passing ICMP traffic end to end (0% loss), and the mDNS announce/discover/apply/revert cycle over real multicast. Two real bugs found and fixed: `wg set ... allowed-ips` doesn't add a kernel route (a real handshake completed with zero routing until `setPeer()` was fixed to add it); mDNS's default IPv6 query aborting the entire lookup after a valid IPv4 response had already arrived.
+
+### theta-agent v2.1.2
+
+#### Added
+- **Linux mDNS local-discovery** (`local_discovery.go`, `hosts_override.go`) — opt-in via `prefer_local_directory`; skips the relay/WAN path when a local `theta-gateway`/`theta-proxy` announces it fronts this agent's `server_url` host. Never touches TLS/certificate validation — only changes where the agent connects, never whether it trusts what answers.
+
+#### Fixed (found via live two-container testing over real multicast)
+- `mdns.Lookup()`'s default IPv6 query aborted the whole lookup — discarding an already-valid IPv4 response — when IPv6 wasn't available. Fixed by disabling IPv6 querying explicitly.
+- Hosts-file writes used write-tmp-then-rename; `/etc/hosts` is frequently a bind mount (every container runtime does this) and `rename()` onto one fails with `EBUSY`. Switched to truncate-and-rewrite in place.
+
+Windows/macOS local-discovery remain unbuilt — see `docs/AGENT_LOCAL_DISCOVERY_SPEC.md`.
+
+Also backfills v2.1.0/v2.1.1 changelog entries (Windows agent, WireGuard client, installer, CI) in theta-agent's own CHANGELOG.md, which were tagged and released earlier but never documented there.
+
 ## [v2.2.0] - 2026-08-10
 
 Multi-site join is now end-to-end: theta-directory can adopt an existing
