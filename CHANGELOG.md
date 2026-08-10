@@ -9,6 +9,32 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [jump-host](https://github.com/theta42/jump-host/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v2.2.0] - 2026-08-10
+
+Multi-site join is now end-to-end: theta-directory can adopt an existing
+master's directory as a read-only spoke (v2.3.0), and setup.sh wires it into a
+first-run bring-up.
+
+### theta-directory v2.3.0
+- **Master Site modal**: "Join an Existing Site" form (fresh installs only),
+  Site Join Keys manager (mint/revoke/list), live WAN Sync Health via
+  `POST /api/site/ping`.
+- **Spoke read-only**: directory writes (resources/edges/groups/secrets/grants/
+  driver actions/discovery merges) return 403 pointing at the master.
+- **Fresh-install guard**: `/api/site/join` refuses unless no users beyond the
+  bootstrap admin and no enrolled agents; `site-status` exposes `canJoin`.
+- (Server endpoints, join keys, persisted role shipped in theta-directory v2.2.0.)
+
+### theta-suite (this repo)
+- **First-run site join**: `setup.sh` step 5b runs `bootstrap/site-join.js`
+  (logs in as the admin, calls `/api/site/join`) when `setup.env` sets
+  `CFG_MASTER_DIRECTORY_URL` + `CFG_MASTER_DIRECTORY_JOIN_KEY`. Honored only on
+  first run (once `./config/` exists it is ignored), so a populated directory
+  can never be merged. Idempotent — an already-joined node reports "already a
+  spoke".
+- `setup.env.example` documents the two vars; the lint job (branch-protected
+  name "Syntax check bootstrap.js") now also `node --check`s `site-join.js`.
+
 ## [v2.1.1] - 2026-08-10
 
 Fresh-install fixes for the v2.1.0 Windows rollout.
