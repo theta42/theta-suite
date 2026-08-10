@@ -1153,6 +1153,22 @@ else
 	info "OAuth client registered + creds written into $CONFIG_DIR/proxy-secrets.js."
 fi
 
+# ── 5b. Multi-site: join an existing master directory (first-run only) ────────
+# setup.env: CFG_MASTER_DIRECTORY_URL + CFG_MASTER_DIRECTORY_JOIN_KEY (mint a
+# site join key on the master). Only honored on a first-run bring-up: ensure_config
+# reads setup.env once and ignores it once ./config/ exists, so an already-running
+# directory can never be merged into a master's. Idempotent — a node that already
+# joined reports "already a spoke" and setup continues.
+if [[ -n "${CFG_MASTER_DIRECTORY_URL:-}" && -n "${CFG_MASTER_DIRECTORY_JOIN_KEY:-}" ]]; then
+	info "Joining master site ${CFG_MASTER_DIRECTORY_URL} (CFG_MASTER_DIRECTORY_*)..."
+	if ! "${COMPOSE[@]}" exec -T sso-manager node /bootstrap/site-join.js \
+			"$CFG_MASTER_DIRECTORY_URL" "$CFG_MASTER_DIRECTORY_JOIN_KEY"; then
+		die "site join failed — check the master URL + site join key (mint one on the master's Site Join Keys card)."
+	fi
+else
+	info "No CFG_MASTER_DIRECTORY_URL/CFG_MASTER_DIRECTORY_JOIN_KEY — running as a fresh master site."
+fi
+
 # ── 6. Start the proxy, wait for health ───────────────────────────────────────
 # PROXY_GIT_COMMIT: same reasoning as SSO_GIT_COMMIT above.
 PROXY_GIT_COMMIT="$(git -C proxy rev-parse --short HEAD 2>/dev/null || echo unknown)"

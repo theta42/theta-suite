@@ -28,7 +28,7 @@ jobs:
         run: shellcheck -S warning setup.sh
 
   bootstrap-syntax:
-    name: Syntax check bootstrap.js
+    name: Syntax check bootstrap scripts
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -40,7 +40,9 @@ jobs:
           node-version: 22.x
 
       - name: Syntax check
-        run: node --check bootstrap/bootstrap.js
+        run: |
+          node --check bootstrap/bootstrap.js
+          node --check bootstrap/site-join.js
 
       - name: Jump-host LDAP config consistency
         run: node test/check_jump_ldap_tls.js
