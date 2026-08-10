@@ -45,7 +45,8 @@ stack with one command.
 - **Direct LDAP binds** — anything that binds LDAP directly (Linux hosts
   via PAM/SSSD, Gitea, Emby, …) uses LDAPS/StartTLS against the same
   directory.
-- **Geo-Location Scaling** — built-in support for N-Way Multi-Master OpenLDAP [replication](replication.html) across physical sites.
+- **[Multi-Site](multi-site.html)** — one master site, any number of read-only spokes that join with a single key and stay live-synced, with god_admin-gated promotion if the master goes down for good.
+- **Geo-Location Scaling** — built-in support for N-Way Multi-Master OpenLDAP [replication](replication.html) across physical sites (a different, lower-level mechanism — see [Multi-Site](multi-site.html) for how the two compare).
 - **[Directory & Inventory](directory.html)** — map sites, hosts, and services as a graph with rich metadata (IP/MAC, OS/kernel, ports, git repos), auto-provisioned access groups, and automatic registration from theta-suite's agents and discovery plugins. Drives directory-aware tools like the [SSH jump host](../jump-host/).
 - **Subtype metrics & lifecycle drivers** — telemetry, log streaming, and remote control for resources tagged with a `subType` (`systemd`, `docker`, `proxmox`, `wireguard`, `postgresql`, `redis`, `k8s`, …).
 - **OpenBao-backed secrets** — per-resource and per-user secrets with explicit upward inheritance (`Resource → Host → Cluster → Site`).

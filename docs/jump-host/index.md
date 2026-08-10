@@ -84,7 +84,7 @@ Theta Gateway answers both from your directory:
   inventory, not a static list
 - **Per-user key injection** — no downstream changes, no key distribution
 - **Shell, exec, and SFTP** bridging
-- **WireGuard mesh routing** — cross-site network access alongside SSH
+- **[WireGuard mesh routing](mesh.html)** — cross-site network access alongside SSH
 - **Web UI + HTTP API** for auditing and metrics — active sessions, a searchable
   audit log, per-user/per-host counters
 - **Full audit trail** — who, target, method, result, bytes, duration, and the
