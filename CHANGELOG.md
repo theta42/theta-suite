@@ -9,6 +9,34 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [jump-host](https://github.com/theta42/jump-host/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v2.1.0] - 2026-08-10
+
+Rolls up **theta-agent v2.1.0** and **theta-directory v2.1.0**: the theta-agent
+Windows client is now a first-class citizen (Windows service, WireGuard mesh,
+IAM, tray, fully-offline installer) and the Directory can hand a Windows host
+the same one-command install it has always handed Linux.
+
+### theta-agent v2.1.0
+- **Windows agent** (`feat/windows-agent`): platform ops (shutdown.exe / sc.exe /
+  PowerShell / Get-WinEvent), Windows service wrapper (`install-service` starts it
+  immediately), session helper (lock/display/logout/staged self-update), signed
+  `wireguard_apply`/`wireguard_remove` + auto-VPN, IAM via local groups + OpenSSH
+  keys, tray icon fix (PNG→ICO), and the fully-offline Inno installer with a
+  wizard page (Theta Directory URL + join key + "open install-agent page").
+- **Release pipeline**: `.github/workflows/release.yml` builds every binary on
+  GitHub Actions and attaches them to the GitHub release as artifacts (with
+  optional Azure Trusted Signing); nothing binary is committed to the repo.
+  `install.sh` and the Directory modal download from `releases/latest/download/`.
+
+### theta-directory v2.1.0
+- **Windows install commands in the Install Agent modal.** PowerShell one-liners
+  for the join-key / pre-register / custom-config flows (download the offline
+  `setup.exe`, pass `/SERVER_URL`, `/JOIN_KEY`, `/AUTH_TOKEN`, `/PUBLIC_KEY` or
+  `/B64_CONFIG`).
+- **Dropped the committed binaries** from `nodejs/public/resources/theta-agent/`
+  (they are GitHub release artifacts now); the small `install.sh` bootstrap
+  script remains.
+
 ## [v2.0.2] - 2026-08-09
 
 Rolls up **theta-directory v2.0.2**, **proxy v2.0.1**, **jump-host v2.0.1**. Unifies the GitHub Pages docs site: the SSO/Proxy/Jump Host pages, their nav labels, and each component's own README now consistently say Theta Directory / Theta Proxy / Theta Gateway, drop marketing sections ("Why this over the alternatives", "Get it", "Related projects") that don't apply to a suite component, remove every standalone/bare-metal install path, and link to `theta42.github.io/theta-suite/...` instead of the old per-repo Pages sites.
