@@ -76,7 +76,11 @@ async function main() {
   const loginRes = await fetch(`${JUMP_INTERNAL}/api/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ uid: jumpAdminUser, password: jumpAdminPass }),
+    // jump-host's login route (@simpleworkjs/oidc-client's shared router)
+    // expects `username`, not `uid` -- unlike sso-manager-node's own
+    // /api/auth/login (see site-join.js). Confirmed against a real running
+    // jump-host container; `uid` here just silently 401s.
+    body: JSON.stringify({ username: jumpAdminUser, password: jumpAdminPass }),
   });
   if (!loginRes.ok) {
     throw new Error(`jump-host admin login failed (${loginRes.status}): ${await loginRes.text().catch(() => '')}`);
