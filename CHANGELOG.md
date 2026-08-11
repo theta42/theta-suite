@@ -9,6 +9,33 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [jump-host](https://github.com/theta42/jump-host/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v2.11.0] - 2026-08-11
+
+Rolls up **theta-directory v2.10.0** and **theta-agent v2.4.0**. The Windows
+agent install path is now self-hosted and one-click.
+
+### theta-directory v2.10.0
+- **`GET /install-agent/authorize`** — the theta-agent installer's "Log in to
+  the Directory and get a join key..." button opens this page; a logged-in site
+  admin gets a join key minted and is redirected to the installer's loopback
+  callback (loopback-validated).
+- The Directory's Windows install command now downloads the installer from its
+  own `/resources/theta-agent/` instead of GitHub.
+
+### theta-agent v2.4.0
+- Wizard's connection page button is now **"Log in to the Directory and get a
+  join key..."** — it starts a loopback listener, opens `/install-agent/authorize`,
+  and auto-fills Server URL + Join Key from the redirect back.
+- **Local discovery is always on** — `prefer_local_directory` removed from the
+  config and the wizard.
+
+### this repo
+- **`setup.sh`** stages the matching Windows theta-agent installer (the suite's
+  pinned submodule version, SHA256-verified) plus `install.sh` into
+  `config/resources/theta-agent/`, and **`docker-compose.yml`** bind-mounts
+  `./config/resources` over the sso-manager container's `/app/public/resources`
+  so the Directory serves them.
+
 ## [v2.10.0] - 2026-08-11
 
 Rolls up **theta-directory v2.9.0** and **jump-host (Theta Gateway) v2.2.0**.
