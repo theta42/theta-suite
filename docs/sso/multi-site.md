@@ -38,8 +38,13 @@ between the two.
    admin, no enrolled agents), either:
    - Paste the master's URL and the join key into the Master Site modal's
      **Join an Existing Site** form, or
-   - Set `CFG_MASTER_DIRECTORY_URL` / `CFG_MASTER_DIRECTORY_JOIN_KEY` in
-     `setup.env` before the first `./setup.sh` run.
+   - Set `CFG_MASTER_DIRECTORY_URL` / `CFG_MASTER_DIRECTORY_JOIN_KEY` before
+     the first `./setup.sh` run -- either in `setup.env` (which has every
+     option), or in a dedicated `spoke.env` (`cp spoke.env.example spoke.env`)
+     if you'd rather keep join-a-cluster config separate from the rest of the
+     stack's setup. Both are read; `spoke.env`'s values win on a conflict.
+     No public IP on this site at all? `spoke.env.example` also covers the
+     no-inbound relay vars (`CFG_SPOKE_NO_INBOUND`/`CFG_SPOKE_PUBLIC_HOST`).
 3. The spoke pulls the master's full export (LDAP tree, resource catalog,
    agent-signing key) and adopts it, then registers its own reachable URL
    with the master so it can receive live updates going forward.
