@@ -9,6 +9,51 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [jump-host](https://github.com/theta42/jump-host/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v2.5.0] - 2026-08-10
+
+Rolls up **sso-manager-node v2.5.0** and **jump-host v2.1.1** — closes the
+last gap in no-inbound relay automation (the mechanism existed at the API
+level but nothing in the real operator bring-up flow could reach it) and
+fixes two real bugs found live-testing it.
+
+### theta-suite orchestration
+- **`bootstrap/site-relay-register.js`** + `CFG_SPOKE_NO_INBOUND`/
+  `CFG_SPOKE_PUBLIC_HOST` (`setup.env.example`): a no-inbound spoke's
+  `setup.sh` run now discovers its own jump-host's WireGuard mesh IP and
+  registers it with the master on every invocation (idempotent no-op until
+  the two jump-hosts are actually meshed — that peering stays a deliberate
+  manual step, same as minting/pasting a site join key).
+- `docs/MULTI_SITE_SPEC.md` and the published `docs/jump-host/mesh.md` page
+  updated — both still described this as "designed but not automated" after
+  the API-level work had already shipped in sso-manager-node/jump-host.
+
+### sso-manager-node v2.5.0
+- **No-inbound relay automation reachable from the real join flow.**
+  `POST /api/site/join` now forwards `noInbound`/`meshIp`/`publicHost`
+  through to `POST /api/site/spokes`, which drives `utils/proxy_client.js`
+  to auto-create/update the relay route on the master's `theta-proxy` (a new
+  self-service `prx_...` API token client — reuses `theta-proxy`'s existing
+  token system, not a new credential type). Verified against a real running
+  `theta-proxy` container.
+- **Replication traffic prefers the mesh.** `utils/site_replicate.js`'s
+  fire-and-forget resync push tries a registered spoke's `meshIp` first,
+  falling back to its public endpoint on failure.
+
+### jump-host v2.1.1
+- **`GET /api/mesh/self`** — this gateway's own mesh IP, for local scripts
+  (gated by any self-service API token, not a full admin session).
+- **Fixed: `/api/mesh/register` was unreachable via HTTP.** A route-mounting
+  order bug meant every `/api/mesh/*` request hit an admin-session gate
+  before `routes/mesh.js` ever ran, so a real gateway-to-gateway mesh join
+  always 401'd. Found live-testing `/self` with two real containers.
+- **Fixed: the initiating side of a mesh join never recorded its own
+  identity** — `GET /api/mesh/self` and the mesh UI's own-entry handling
+  silently saw nothing on whichever gateway called `/join` (only the
+  receiving side of `/register` persisted a self-entry). Verified with two
+  real meshed containers: both sides now report their own correct mesh IP.
+- **Mesh peer removal now cleans up its kernel routes** (`wg_iface.removePeer()`)
+  — verified live: routes present after `setPeer`, gone after `removePeer`.
+
 ## [v2.4.0] - 2026-08-10
 
 Rolls up **theta-agent v2.2.0** — mDNS local-discovery is now Windows-capable,
