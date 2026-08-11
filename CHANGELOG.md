@@ -9,6 +9,36 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [jump-host](https://github.com/theta42/jump-host/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v2.4.0] - 2026-08-10
+
+Rolls up **theta-agent v2.2.0** — mDNS local-discovery is now Windows-capable,
+closing the last gap in the original multi-site design on the agent side.
+
+### theta-agent v2.2.0
+- **Windows local-discovery**: the hosts override now runs on Windows
+  (`%SystemRoot%\System32\drivers\etc\hosts`, CRLF-aware, `ipconfig /flushdns`
+  after every change). Reachable because the agent runs as a SYSTEM service, so
+  the elevation question in the spec resolved in our favor. The Windows CI leg
+  now runs the real Windows write path instead of skipping.
+- **Local route pinning** (`local_route*.go`): the hosts override only fixes
+  *name resolution*; the packet path is the routing table's job. If the WireGuard
+  mesh tunnel is up with `AllowedIPs` covering the LAN subnet (or a full-tunnel
+  `0.0.0.0/0`), the tunnel route would swallow the direct connection to the
+  discovered LAN IP. Discovery now pins a `/32` host route via the owning local
+  interface (`route.exe add ... metric 1` on Windows, `ip route replace` on
+  Linux) and drops it on revert — closing a real gap in the shipped Linux path.
+- **Prompt reconnect**: an apply/revert signals the WebSocket loop, which
+  reconnects immediately instead of waiting out its 5s backoff.
+- **Installer version fix**: the setup.exe previously hardcoded `2.1.0` in its
+  file name and version resources no matter the tag; it now derives the version
+  from the git tag.
+
+### docs
+- `docs/MULTI_SITE_SPEC.md` status table updated: Windows local-discovery marked
+  shipped; macOS remains the one unbuilt piece (hosts override compiles on
+  darwin but needs `dscacheutil -flushcache` + real hardware testing, being done
+  on a macOS VM).
+
 ## [v2.3.0] - 2026-08-10
 
 Rolls up **theta-directory v2.4.0**, **jump-host v2.1.0**, **theta-agent v2.1.2**. Live catalog replication and a real gateway-to-gateway WireGuard mesh land in the same pass — multi-site directory sync stops being a one-time snapshot, and site-to-site networking becomes real infrastructure instead of a documented-but-unbuilt design. See `docs/MULTI_SITE_SPEC.md` for the full architecture and an explicit TODO list of what's still open (Windows/macOS mDNS, routing directory traffic over the mesh, `theta-proxy` no-inbound relay automation).
