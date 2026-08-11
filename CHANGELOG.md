@@ -9,6 +9,31 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [jump-host](https://github.com/theta42/jump-host/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v2.7.0] - 2026-08-11
+
+Rolls up **sso-manager-node v2.7.0**. Closes the last "operator hand-sets
+this" item on the multi-site TODO: OpenLDAP N-way multi-master replication
+now configures itself.
+
+### theta-suite orchestration
+- **`bootstrap/site-ldap-register.js`**: runs on every `setup.sh` invocation
+  (master and spoke), fetches this node's auto-assigned `LDAP_SERVER_ID` +
+  current peer list from sso-manager-node's new endpoints, and restarts
+  `sso-manager` only when the computed config actually changed.
+- `CFG_LDAP_MMR_MANUAL=true` skips the automatic step for a topology outside
+  this cluster the script can't derive on its own -- otherwise it always
+  runs (every fresh install starts as a master) and would overwrite
+  hand-set values.
+- `setup.env.example`'s old `#LDAP_SERVER_ID=1`/`#LDAP_REPLICATION_HOSTS=`
+  manual-config prompt is gone for the common case.
+
+### sso-manager-node v2.7.0
+- `SiteSpoke.ldapServerId` auto-assigned at registration (same pattern as
+  jump-host's mesh index); each site's LDAP URL derived from its
+  already-known HTTP(S) endpoint. New `GET /api/site/ldap-peers`
+  (spoke-facing) and `GET /directory-admin/ldap-replication-config`
+  (master-local). Verified against real running containers.
+
 ## [v2.6.0] - 2026-08-11
 
 Rolls up **sso-manager-node v2.6.0** and **jump-host v2.1.1** (already
