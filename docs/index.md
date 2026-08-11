@@ -74,10 +74,12 @@ The SSO Manager and the proxy it fronts, both stood up by one `./setup.sh` run:
   management built directly into the web interface, allowing operators to drive
   system administration and automation pipelines programmatically without an
   active browser session.
-- **Multi-Site Geo-Replication**: Built-in support for N-Way Multi-Master LDAP
-  replication, allowing directory states to sync across geographically separated
-  physical hardware or remote data centers for high availability and low-latency
-  local reads.
+- **Multi-Site Geo-Replication**: A master site and any number of spokes join
+  with one key and one URL, staying in sync automatically (no manual LDAP
+  config) — see [Multi-Site (Master/Spoke Join)](sso/multi-site.html). Raw
+  N-Way Multi-Master LDAP replication is also available directly for
+  deployments that want every site independently writable with no
+  master/spoke concept — see [Geo-Location Scaling](sso/replication.html).
 - **Multi-Target Load Balancing**: Native reverse-proxy load balancing that
   distributes traffic across multiple application backends using customizable
   health checks and round-robin strategies.
