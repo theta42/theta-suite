@@ -71,8 +71,19 @@ services:
       # setup.sh (policy sso-broker) — NOT the root token.
       - NODE_ENV=production
       - NODE_PORT=3001
+      # Only a first-run default (site_config.js's envDefaults()) -- a real
+      # join/promote persists its own value to /config/site.json afterward,
+      # which always wins. Derived by setup.sh from CFG_SITE_NAME.
+      - SITE_SLUG=${SITE_SLUG:-}
       - LDAP_SERVER_ID=${LDAP_SERVER_ID:-}
       - LDAP_REPLICATION_HOSTS=${LDAP_REPLICATION_HOSTS:-}
+      # utils/proxy_client.js (no-inbound relay automation) and
+      # utils/jump_client.js (real mesh-gateway count on the Multi-Site
+      # modal) both no-op/skip without these -- neither was ever actually
+      # wired into the compose environment before, so both features were
+      # unreachable in every real deployment despite existing in code.
+      - PROXY_INTERNAL_URL=http://proxy:3000
+      - JUMP_INTERNAL_URL=http://jump-host:3002
       - VAULT_ADDR=http://openbao:8200
       - VAULT_TOKEN=${SSO_VAULT_TOKEN:-}
       # Optional upstream HTTP(S) proxy for outbound calls (SMTP, etc.) at

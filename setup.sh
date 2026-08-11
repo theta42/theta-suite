@@ -543,6 +543,16 @@ BAOEOF
 	CFG_SSO_HOST="${CFG_SSO_HOST:-sso.$CFG_DOMAIN}"
 	CFG_PROXY_HOST="${CFG_PROXY_HOST:-proxy.$CFG_DOMAIN}"
 	CFG_SITE_NAME="${CFG_SITE_NAME:-local}"
+	# Multi-site identity (site_config.js's `siteSlug`, shown on the Directory's
+	# Multi-Site modal) -- without this it's never set anywhere and every fresh
+	# master shows the module's own literal fallback, "site-default", forever.
+	# Derived from CFG_SITE_NAME with the same slugify rule bootstrap.js uses
+	# for the site Resource's own slug (site_$(slugify), underscore prefix --
+	# this is hyphenated to match site_config.js's own "site-default" format).
+	# site.json overrides this after first bring-up (join/promote write real
+	# values there), so this only ever matters for a fresh install.
+	SITE_SLUG="site-$(echo "$CFG_SITE_NAME" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+|-+$//g')"
+	export SITE_SLUG
 	CFG_ORG="${CFG_ORG:-Theta Directory}"
 	CFG_ADMIN_UID="${CFG_ADMIN_UID:-admin}"
 	CFG_ADMIN_EMAIL="${CFG_ADMIN_EMAIL:-admin@$CFG_PROXY_HOST}"
