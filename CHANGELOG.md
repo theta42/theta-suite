@@ -9,6 +9,28 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [jump-host](https://github.com/theta42/jump-host/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v2.8.0] - 2026-08-11
+
+Rolls up **sso-manager-node v2.8.0**. Fixes found while auditing the v2.7.0
+multi-site work for gaps, plus the published docs staleness that same audit
+turned up.
+
+### sso-manager-node v2.8.0
+- Promotion no longer orphans the demoted old master's LDAP replication --
+  `/demote` now registers itself with the new master immediately instead of
+  being left with no way to ever get a real `ldapServerId` again.
+- The Directory's site slug and the multi-site replication identity are
+  unified -- previously unrelated values that happened to share a name.
+- LDAP replication status (real vs. advertised ServerID, a `stale` flag) and
+  per-spoke detail (not just an aggregate count) on the Multi-Site modal.
+
+### theta-suite docs
+- Fixed multiple stale/contradictory claims on the published site: the
+  no-inbound relay described as "designed but not automated" (shipped
+  earlier this session), `docs/sso/replication.md` never mentioning the new
+  LDAP MMR auto-config at all, and the homepage feature list only
+  describing the old manual N-way replication.
+
 ## [v2.7.0] - 2026-08-11
 
 Rolls up **sso-manager-node v2.7.0**. Closes the last "operator hand-sets
