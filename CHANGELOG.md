@@ -9,6 +9,68 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [jump-host](https://github.com/theta42/jump-host/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v2.12.0] - 2026-08-11
+
+Rolls up **theta-directory v2.11.0** — migrating an existing LDAP directory
+into the suite no longer means recreating every account by hand.
+
+### theta-directory v2.11.0
+- **Import users and groups from an existing LDAP directory.** New admin-only
+  wizard at **Users → Import LDIF** (`/users/import`) takes a `slapcat` /
+  `ldapsearch` export and migrates accounts *through the app's own model
+  layer*, so every imported account arrives with a `UserVerification` row, a
+  personal group, cache invalidation and service-account membership — exactly
+  as if it had been created in the UI. Two guarantees drive the design:
+  `uidNumber`/`gidNumber` are preserved verbatim (they are what every file on
+  every host is owned by; reallocating them turns a migration into a
+  filesystem-wide chown), and `userPassword` is carried across as the stored
+  hash, never re-hashed, so people keep the password they already have.
+  - `utils/ldif.js` — a standalone RFC 2849 parser (line folding, base64,
+    attribute options, CRLF). Refuses `attr:< url` values rather than hand
+    whoever uploads a dump a file-disclosure primitive, and rejects change
+    records instead of misreading them as content.
+  - `utils/ldif_import.js` — schema-agnostic profiling, planning and applying.
+    The source layout is *detected and then editable*, so a FreeIPA or AD
+    export is a mapping change rather than a code change. Membership resolves
+    per entry, because real directories mix `groupOfNames`/`member` with
+    `posixGroup`/`memberUid`.
+  - Nothing is written until every account and group has been reviewed. Blocked
+    rows (no `uidNumber`, a duplicate inside the file, a collision with an
+    account already present) are skipped regardless of what the client sends.
+  - **Groups are never created by an import.** A group name from another
+    directory carries no meaning here, where access is a projection of the
+    resource graph — each source group either has its members merged into a
+    group that already exists, or is dropped. Add your hosts and apps *before*
+    importing so there is something to map onto.
+  - Carried across where present: password hash, uid/gid numbers, name, email,
+    phone, shell, home directory, description, location, date of birth, every
+    SSH key, sudo rules, and the account's disabled state. Anything else is
+    listed on the row as *not migrated* rather than dropped quietly.
+  - Onboarding is a per-run choice (treat ToS as accepted / email as verified).
+    Legacy MD5 passwords always force a change at first login regardless, and
+    no welcome email is sent to anyone.
+  - Staging lives in Redis under a one-hour expiry, destroyed on apply or
+    abandon; the parsed dump is never written to disk and password hashes are
+    never included in an API response.
+- **`User.add(data, options)`** takes `preserveIds`/`preserveHash`/
+  `suppressWelcome` as a second argument, deliberately not as fields on `data`:
+  every route calls `User.add(req.body)`, so a `uidNumber` honoured whenever
+  present would let anyone who can create a user claim uid 0, and a
+  `userPassword` that skipped hashing whenever it looked hashed would let them
+  plant a known hash. Normal user creation is unchanged.
+- **An account may share its primary group with another account.** Under
+  `preserveIds` a group already holding the gid is referenced rather than
+  duplicated — legal POSIX, and present in real directories.
+- **`sudoHost`/`sudoCommand`/`sudoUser` are honoured when supplied**, so a
+  migrated account keeps the rule it had instead of being silently granted this
+  directory's `ALL`/`ALL` default.
+- New documentation: [Importing an existing
+  directory](https://theta42.github.io/theta-directory/ldif-import.html), also
+  served in-app at `/docs/ldif-import`.
+
+### this repo
+- Submodule gitlink for `sso-manager-node` moved to theta-directory v2.11.0.
+
 ## [v2.11.0] - 2026-08-11
 
 Rolls up **theta-directory v2.10.0** and **theta-agent v2.4.0**. The Windows
