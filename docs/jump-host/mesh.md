@@ -48,13 +48,17 @@ the hard ceiling this addressing scheme supports.
 - `NET_ADMIN` capability (or equivalent) on the container/host running the
   gateway, to create the WireGuard interface.
 
-## Not yet connected to directory sync
+## Connected to directory sync
 
-This mesh is a networking layer on its own. [Theta Directory's multi-site
-join](../sso/multi-site.html) (catalog + LDAP replication between a master
-and its spokes) does not currently route its traffic over this mesh — the
-two features work independently today. Routing directory sync over the mesh,
-and using the mesh to reach a spoke site with no inbound access of its own,
-are both designed but not yet automated — see the [architecture
+[Theta Directory's multi-site join](../sso/multi-site.html) (catalog + LDAP
+replication between a master and its spokes) prefers this mesh once it's up:
+a spoke that's registered a mesh IP gets its live resync pushes routed over
+the tunnel instead of the open internet, falling back to its public endpoint
+if the mesh path fails. A spoke with no public IP at all can also register as
+no-inbound (`CFG_SPOKE_NO_INBOUND` in `theta-suite`'s `setup.env`) so the
+master auto-creates a relay route through its own `theta-proxy` — the master
+terminates TLS for that spoke's hostname and relays over this mesh. The mesh
+peering itself (this page) stays a manual step on both sides; directory join
+and relay registration pick up from there. See the [architecture
 spec](https://github.com/theta42/theta-suite/blob/master/docs/MULTI_SITE_SPEC.md)
-for current status.
+for the full detail.
