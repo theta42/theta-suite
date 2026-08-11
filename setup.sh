@@ -1329,16 +1329,28 @@ if [[ "$CFG_THETA_AGENT_ENABLE" == "1" ]]; then
 	info "Setting up theta-agent on the host..."
 	(
 		cd theta-agent || exit 0
-		# Install the prebuilt binary that ships in the theta-agent submodule (the
-		# repo's own install.sh uses the same release binary). We do NOT build from
-		# source here: a previous `go build -o theta-agent main.go websocket.go
-		# config.go` omitted executor.go/telemetry.go, failed to compile, and was
-		# silently skipped, so the agent was never installed.
-		if [[ ! -f "theta-agent-linux-amd64" ]]; then
-			warn "Prebuilt theta-agent-linux-amd64 missing from the theta-agent submodule. Skipping theta-agent installation."
+		# Download the current release binary from GitHub rather than trusting a
+		# binary committed in the submodule checkout. A committed binary drifts:
+		# theta-agent's own `theta-agent update` moved to pulling from GitHub
+		# Releases (DESIGN-WINDOWS.md §9, "nothing binary lives in the repos")
+		# once, but this script kept installing the stale binary that shipped
+		# with an old submodule pin, which still pointed `update` at a dead
+		# SSO /resources/ URL that never existed server-side -- so an agent
+		# installed this way could never even self-update out of the bug. We
+		# do NOT build from source here either: a previous `go build -o
+		# theta-agent main.go websocket.go config.go` omitted
+		# executor.go/telemetry.go, failed to compile, and was silently
+		# skipped, so the agent was never installed.
+		AGENT_BIN_URL="https://github.com/theta42/theta-agent/releases/latest/download/theta-agent-linux-amd64"
+		AGENT_BIN_TMP="$(mktemp)"
+		info "  Downloading latest theta-agent-linux-amd64 release binary..."
+		if ! curl -fsSL -o "$AGENT_BIN_TMP" "$AGENT_BIN_URL" || [[ ! -s "$AGENT_BIN_TMP" ]]; then
+			rm -f "$AGENT_BIN_TMP"
+			warn "Could not download theta-agent-linux-amd64 from $AGENT_BIN_URL. Skipping theta-agent installation."
 		else
-			info "  Installing prebuilt theta-agent binary..."
-			if [[ -x "theta-agent-linux-amd64" ]]; then
+			chmod +x "$AGENT_BIN_TMP"
+			info "  Installing theta-agent binary..."
+			if true; then
 				# The agent binary reads /etc/theta42/agent.yml (theta-agent/main.go).
 				sudo mkdir -p /etc/theta42
 				if [[ ! -f /etc/theta42/agent.yml ]]; then
@@ -1369,7 +1381,12 @@ if [[ "$CFG_THETA_AGENT_ENABLE" == "1" ]]; then
 					else
 						warn "No agent join key available — /etc/theta42/agent.yml has no credential and the agent will not connect."
 					fi
-					# We want to connect to either https or http depending on CFG_CREATE_ALL_HTTP
+					# We want to connect to either https or http depending on CFG_CREATE_ALL_HTTP.
+					# Without this, agent.yml keeps agent.yml.example's literal
+					# "https://sso.example.com" placeholder forever -- nothing
+					# else in this block ever touched server_url, only join_key.
+					AGENT_SCHEME="https"; [[ "${CFG_CREATE_ALL_HTTP:-0}" == "1" ]] && AGENT_SCHEME="http"
+					sudo sed -i "s|^server_url:.*|server_url: \"${AGENT_SCHEME}://${CFG_SSO_HOST}\"|" /etc/theta42/agent.yml
 					sudo getent group theta-secrets >/dev/null 2>&1 || sudo groupadd -r theta-secrets 2>/dev/null || true
 					sudo getent group theta >/dev/null 2>&1 || sudo groupadd -r theta 2>/dev/null || true
 					SECRETS_GRP="root"
@@ -1377,12 +1394,25 @@ if [[ "$CFG_THETA_AGENT_ENABLE" == "1" ]]; then
 					sudo chown -R "root:$SECRETS_GRP" /etc/theta42 2>/dev/null || true
 					sudo chmod 750 /etc/theta42
 					sudo chmod 640 /etc/theta42/agent.yml
+				else
+					# Self-heal an already-installed agent.yml that predates the
+					# server_url fix above -- it would otherwise keep whatever
+					# placeholder/stale host it was first installed with
+					# forever, since nothing else in this script ever revisits
+					# an existing agent.yml. Never touches join_key/auth_token:
+					# those may since have been rewritten by the agent itself
+					# with real issued credentials.
+					AGENT_SCHEME="https"; [[ "${CFG_CREATE_ALL_HTTP:-0}" == "1" ]] && AGENT_SCHEME="http"
+					if sudo grep -q '^server_url:' /etc/theta42/agent.yml; then
+						sudo sed -i "s|^server_url:.*|server_url: \"${AGENT_SCHEME}://${CFG_SSO_HOST}\"|" /etc/theta42/agent.yml
+					fi
 				fi
 				# Stop a running agent before overwriting its binary (cp into a
 				# running executable fails with "Text file busy" on a re-install).
 				sudo systemctl stop theta-agent.service 2>/dev/null || true
-				sudo cp theta-agent-linux-amd64 /usr/local/bin/theta-agent
+				sudo cp "$AGENT_BIN_TMP" /usr/local/bin/theta-agent
 				sudo chmod +x /usr/local/bin/theta-agent
+				rm -f "$AGENT_BIN_TMP"
 
 				# Install desktop tray companion if available
 				TRAY_SRC="dist/theta-agent-tray-linux-amd64"
