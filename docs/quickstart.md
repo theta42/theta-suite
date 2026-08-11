@@ -74,6 +74,11 @@ file shape.
 > exist, `./setup.sh` migrates them into `./config/` preserving your existing
 > secrets — no need to write a `setup.env`.
 
+> **Joining an existing Theta Directory cluster instead of seeding a fresh
+> one?** See [Multi-Site (Master/Spoke Join)](sso/multi-site.html) —
+> `spoke.env.example` has the join-a-cluster vars split out into their own
+> file, or set them directly in `setup.env` (which has every option).
+
 ---
 
 ## 3. Run

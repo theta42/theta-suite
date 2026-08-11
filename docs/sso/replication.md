@@ -23,32 +23,57 @@ In an N-Way Multi-Master setup, every site runs a fully active OpenLDAP server (
 
 ## Configuration
 
-To enable replication, you must pass two environment variables to the `sso-manager` container:
+The container's entrypoint reads two environment variables to configure this
+-- `LDAP_SERVER_ID` (a unique integer for this node) and
+`LDAP_REPLICATION_HOSTS` (a space-separated list of every **other** node's
+LDAP URL) -- and, when both are set, automatically loads the `syncprov`
+module, enables `mirrormode`, and generates the necessary `syncrepl` blocks
+in `/etc/openldap/slapd.conf`.
 
-1. `LDAP_SERVER_ID`: A unique integer for this node (e.g., `1`, `2`, `3`). This MUST be unique across the cluster.
-2. `LDAP_REPLICATION_HOSTS`: A space-separated list of the LDAP URLs of all **other** nodes in the cluster.
+### Automatic config via Multi-Site join
 
-### Example using `theta-env` / Docker Compose
+**If you're using [Multi-Site join](multi-site.html) (`CFG_MASTER_DIRECTORY_URL`/`spoke.env`),
+you don't set these by hand.** The master assigns each spoke a unique
+`LDAP_SERVER_ID` at join time (the same way it assigns a WireGuard mesh
+index) and derives `LDAP_REPLICATION_HOSTS` from every site's already-known
+HTTPS endpoint (`ldaps://<same-host>:636`) -- `theta-suite`'s `bootstrap/
+site-ldap-register.js` applies it and re-checks on every `setup.sh` run,
+since the peer list grows as new spokes join, restarting `sso-manager` only
+when the computed config actually changed.
 
-**Site 1 (`setup.env` or `docker-compose.yml`)**
+**Known limitation**: the *master's* own `LDAP_REPLICATION_HOSTS` only gets
+recomputed when its `setup.sh` is re-run — there's no live push telling an
+already-running master about a spoke that joined five minutes ago. Re-run
+`setup.sh` on the master after bringing up a new spoke (or after promoting
+one to master) to pick up the current peer list. A spoke's own config, by
+contrast, is re-checked and applied on every `setup.sh` run there, which is
+the common/recurring event.
+
+### Manual configuration
+
+Have a topology outside a `theta-suite`-managed cluster (fully independent,
+always-writable sites, no master/spoke concept)? Set
+`CFG_LDAP_MMR_MANUAL=true` to skip the automatic path entirely and set the
+two variables directly -- without this, the automatic step runs on every
+deployment (every fresh install starts as a master) and will overwrite them.
+
+**Site 1**
 ```env
 LDAP_SERVER_ID=1
 LDAP_REPLICATION_HOSTS="ldaps://sso.site2.com:636 ldaps://sso.site3.com:636"
 ```
 
-**Site 2 (`setup.env` or `docker-compose.yml`)**
+**Site 2**
 ```env
 LDAP_SERVER_ID=2
 LDAP_REPLICATION_HOSTS="ldaps://sso.site1.com:636 ldaps://sso.site3.com:636"
 ```
 
-**Site 3 (`setup.env` or `docker-compose.yml`)**
+**Site 3**
 ```env
 LDAP_SERVER_ID=3
 LDAP_REPLICATION_HOSTS="ldaps://sso.site1.com:636 ldaps://sso.site2.com:636"
 ```
-
-Once configured, the container's entrypoint will automatically load the `syncprov` module, enable `mirrormode`, and generate the necessary `syncrepl` blocks in `/etc/openldap/slapd.conf`.
 
 ## User Locations
 

@@ -10,10 +10,10 @@ the **master** (single write authority for the shared catalog) and any
 number of **spokes** — read-only replicas that stay in sync automatically and
 run local authentication with zero WAN dependency.
 
-This is a different, higher-level mechanism than [raw LDAP N-way
-replication](replication.html) — see [How this relates to LDAP
-replication](#how-this-relates-to-ldap-replication) below if you're deciding
-between the two.
+This is a higher-level mechanism than [raw LDAP N-way
+replication](replication.html) — and it now drives that lower-level
+replication for you automatically. See [How this relates to LDAP
+replication](#how-this-relates-to-ldap-replication) below.
 
 ## Why and when to use this
 
@@ -45,6 +45,13 @@ between the two.
      stack's setup. Both are read; `spoke.env`'s values win on a conflict.
      No public IP on this site at all? `spoke.env.example` also covers the
      no-inbound relay vars (`CFG_SPOKE_NO_INBOUND`/`CFG_SPOKE_PUBLIC_HOST`).
+
+     Want this spoke reachable at its own public domain rather than sharing
+     the master's? `CFG_DOMAIN` (the LDAP identity namespace) must stay
+     identical across every site in a cluster — MMR replicas can't diverge
+     on base DN — but `CFG_PUBLIC_DOMAIN` overrides just this site's own web
+     hostnames (`sso.*`/`proxy.*`) independently of it. Only meaningful for
+     an inbound spoke serving its own traffic directly.
 3. The spoke pulls the master's full export (LDAP tree, resource catalog,
    agent-signing key) and adopts it, then registers its own reachable URL
    with the master so it can receive live updates going forward.
@@ -82,26 +89,44 @@ so on) are **not** currently synced — each site still generates its own.
 
 - Both sites need a network path to each other's HTTP(S) API — the master to
   pull an export from, the spoke to push replication updates back to. A site
-  with no inbound path at all (e.g. behind CGNAT) can't join yet on its own;
-  a relay mechanism for that case is designed but not automated (see the
-  [architecture spec](https://github.com/theta42/theta-suite/blob/master/docs/MULTI_SITE_SPEC.md)
-  for the current status).
+  with **no inbound path at all** (e.g. behind CGNAT) can still join: set
+  `CFG_SPOKE_NO_INBOUND=true` + `CFG_SPOKE_PUBLIC_HOST` (`spoke.env.example`)
+  once its jump-host is meshed to the master's over WireGuard (mesh peering
+  itself is a manual, one-time step on both jump-hosts — see [Theta Gateway
+  → Mesh](../jump-host/mesh.html)) — the master then relays traffic to it
+  and auto-creates the matching route on its own `theta-proxy`. A spoke with
+  **zero inbound and zero outbound** path still can't join at all (the join
+  itself needs to reach the master's API directly).
 - Joining only ever happens on a **fresh install**. There's no way to merge
   an already-populated directory into a master's — re-provision the host
   first.
+- Promoting a spoke to master doesn't instantly finish reconciling OpenLDAP
+  replication (see below) — re-run `setup.sh` on the newly-promoted node
+  promptly afterward.
 
 ## How this relates to LDAP replication
 
-[N-way LDAP replication](replication.html) is a *lower-level*, different
-mechanism: every site runs a fully independent, fully writable `slapd`, wired
-together with raw `syncrepl` environment variables, and there's no concept of
-a master or a managed join. It predates this feature and is still there for
-deployments that specifically want every site independently writable.
+[N-way LDAP replication](replication.html) is the *lower-level* mechanism
+underneath this: `slapd`'s own `syncrepl`, wired via `LDAP_SERVER_ID` +
+`LDAP_REPLICATION_HOSTS`. Originally this was hand-configured by the
+operator, separately from the join flow above, for deployments that wanted
+every site independently writable with no concept of a master.
 
-Multi-site join (this page) is the opposite design: one write authority, a
-managed onboarding flow, and automatic ongoing sync — closer to what most
-"add a second office" or "add a home-lab spoke" setups actually want. **Don't
-combine the two** — pick one per deployment.
+**When you join via this page's flow, that lower-level config is now handled
+for you.** The master auto-assigns each spoke a unique `LDAP_SERVER_ID` at
+join time and derives every site's LDAP URL from its already-known HTTPS
+endpoint — `theta-suite`'s `bootstrap/site-ldap-register.js` applies it,
+re-checked on every `setup.sh` run since the peer list grows as spokes join.
+You don't hand-set `LDAP_SERVER_ID`/`LDAP_REPLICATION_HOSTS` for a cluster
+built this way. See [Geo-Location Scaling](replication.html#automatic-config-via-multi-site-join)
+for the mechanics, and its documented limitation: the *master's* own
+replication list only updates on ITS next `setup.sh` run, not live the
+instant a new spoke joins.
+
+Still want fully independent, always-writable sites with no master/spoke
+concept at all? `CFG_LDAP_MMR_MANUAL=true` opts out of the automatic path so
+you can hand-set `LDAP_SERVER_ID`/`LDAP_REPLICATION_HOSTS` directly, same as
+before this integration existed.
 
 ## See also
 
