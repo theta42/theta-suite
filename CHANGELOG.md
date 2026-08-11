@@ -9,6 +9,33 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [jump-host](https://github.com/theta42/jump-host/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v2.9.0] - 2026-08-11
+
+Rolls up **theta-agent v2.3.0** — the Windows agent finally gets its missing
+pieces: directory logon, real telemetry, a proper icon, and a redesigned
+installer.
+
+### theta-agent v2.3.0
+- **Windows directory logon** (`configure-login`, `ConfigureLDAP`): LDAP-backed
+  sign-in via the bundled OpenCredential credential provider is now real and
+  *directory-driven* — the agent advertises `capabilities.configure_ldap`, the
+  Directory pushes its own LDAP settings, and the agent seeds OpenCredential's
+  registry config to authenticate against its local LDAP tunnel
+  (`127.0.0.1:389`). Members of the directory admin group get local
+  Administrator; LocalMachine stays enabled as a no-lockout fallback.
+- **Windows discovery/telemetry**: disks now report logical drives (`C:`, NTFS,
+  real usage) instead of the Unix `/ /` fallback, and logged-in users are
+  enumerated via the WTS API (was always empty).
+- **New tray badge set + icon**: rounded-square gradient badges with a crisp
+  white theta, multi-size ICO, and the same icon on the Start menu, setup.exe,
+  and uninstaller.
+- **Installer wizard redesign**: asks whether to allow Directory sign-in on this
+  computer and whether to use local (mDNS/layer-2) discovery; clean options
+  page; fixed a bug where the installer wrote an invalid-YAML `desktop_helper`
+  path that would crash-loop the service.
+- **Release matrix**: macOS builds disabled for now (the agent still compiles
+  for darwin; will be re-enabled when a macOS build host is available).
+
 ## [v2.8.0] - 2026-08-11
 
 Rolls up **sso-manager-node v2.8.0**. Fixes found while auditing the v2.7.0
