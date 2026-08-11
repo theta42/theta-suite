@@ -1060,6 +1060,15 @@ info "Starting bao-renewer (service-token renewal sidecar)..."
 SSO_GIT_COMMIT="$(git -C sso-manager-node rev-parse --short HEAD 2>/dev/null || echo unknown)"
 export SSO_GIT_COMMIT
 env_upsert SSO_GIT_COMMIT "$SSO_GIT_COMMIT"
+# OpenLDAP multi-master replication (docs/replication.md, auto-configured --
+# see step 7e below and bootstrap/site-ldap-register.js): pick up whatever
+# LDAP_SERVER_ID/LDAP_REPLICATION_HOSTS a PRIOR run already computed, so a
+# restart doesn't silently drop back to standalone (no LDAP_SERVER_ID env at
+# all). A truly fresh install has no file yet -- that's fine, it just starts
+# standalone until step 7e computes and applies real values. Skipped under
+# CFG_LDAP_MMR_MANUAL=true so a manually hand-set LDAP_SERVER_ID/
+# LDAP_REPLICATION_HOSTS in setup.env isn't clobbered by a stale auto file.
+[[ "${CFG_LDAP_MMR_MANUAL:-false}" != "true" && -f "$CONFIG_DIR/ldap-replication.env" ]] && parse_kv_file "$CONFIG_DIR/ldap-replication.env"
 info "Building + starting sso-manager (first run builds the image; this takes a while)..."
 "${COMPOSE[@]}" up -d --build sso-manager
 
@@ -1320,6 +1329,40 @@ if [[ "${CFG_SPOKE_NO_INBOUND:-false}" == "true" ]]; then
 		"${COMPOSE[@]}" exec -T sso-manager node /bootstrap/site-relay-register.js \
 			"https://$CFG_SSO_HOST" "$CFG_SPOKE_PUBLIC_HOST" || warn "relay registration did not complete — check: ${COMPOSE[*]} exec sso-manager node /bootstrap/site-relay-register.js https://$CFG_SSO_HOST $CFG_SPOKE_PUBLIC_HOST"
 	fi
+fi
+
+# ── 7e. OpenLDAP multi-master replication auto-config (every run) ────────────
+# docs/replication.md: the master assigns each spoke a unique LDAP_SERVER_ID
+# and derives every site's LDAP URL automatically (bootstrap/
+# site-ldap-register.js) instead of an operator hand-maintaining
+# LDAP_SERVER_ID/LDAP_REPLICATION_HOSTS. Runs on every invocation -- both
+# master (its peer list grows as spokes join) and spoke -- and restarts
+# sso-manager only when the computed config actually changed, since
+# OpenLDAP's static slapd.conf is only read at process start.
+#
+# CFG_LDAP_MMR_MANUAL=true skips this entirely -- every fresh install starts
+# as a master, so without this escape hatch an operator's own hand-set
+# LDAP_SERVER_ID/LDAP_REPLICATION_HOSTS (a topology outside this theta-suite
+# cluster this script can't derive) would get silently overwritten.
+if [[ "${CFG_LDAP_MMR_MANUAL:-false}" == "true" ]]; then
+	info "CFG_LDAP_MMR_MANUAL=true — skipping automatic LDAP replication config."
+	LDAP_REG_OUT=""
+else
+LDAP_REG_OUT=$("${COMPOSE[@]}" exec -T sso-manager node /bootstrap/site-ldap-register.js "https://$CFG_SSO_HOST" 2>&1) || warn "LDAP replication config check failed — check: ${COMPOSE[*]} exec sso-manager node /bootstrap/site-ldap-register.js https://$CFG_SSO_HOST"
+echo "$LDAP_REG_OUT" | sed 's/^/[setup] /'
+fi
+if echo "$LDAP_REG_OUT" | grep -q '^LDAP_CONFIG_CHANGED=yes'; then
+	info "LDAP replication config changed — restarting sso-manager to apply it..."
+	[[ -f "$CONFIG_DIR/ldap-replication.env" ]] && parse_kv_file "$CONFIG_DIR/ldap-replication.env"
+	"${COMPOSE[@]}" up -d --force-recreate sso-manager
+	info "Waiting for sso-manager to be healthy again..."
+	for i in $(seq 1 60); do
+		if docker exec sso-manager wget -q -O- http://localhost:3001/health >/dev/null 2>&1; then
+			info "sso-manager is healthy."; break
+		fi
+		if (( i == 60 )); then warn "sso-manager did not become healthy in 120s after the LDAP config restart. Check: ${COMPOSE[*]} logs sso-manager"; break; fi
+		sleep 2
+	done
 fi
 
 # ── 7c. Install theta-agent on the host ──────────────────────────────────────
