@@ -9,6 +9,50 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [jump-host](https://github.com/theta42/jump-host/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v2.6.0] - 2026-08-11
+
+Rolls up **sso-manager-node v2.6.0** and **jump-host v2.1.1** (already
+current). Fixes several real bugs found on a live deployment: theta-agent
+never got its `server_url` written, `theta-agent update` 404'd because
+setup.sh installed a stale committed binary, the Directory's site slug and
+gateway count were both wrong, and duplicate group rows accumulated on
+repeated resource promotion.
+
+### theta-suite orchestration
+- **`server_url` now gets written into `/etc/theta42/agent.yml`.** setup.sh's
+  theta-agent install step `sed`'d in `join_key` but never touched
+  `server_url`, so it kept `agent.yml.example`'s literal placeholder forever.
+  Self-heals an already-installed `agent.yml` too (never touches
+  `join_key`/`auth_token`).
+- **`theta-agent update` no longer 404s.** setup.sh now downloads the current
+  release binary from GitHub instead of trusting one committed in the
+  theta-agent submodule checkout, which predated an upstream fix and could
+  never self-update out of the bug. Matches theta-agent's own `install.sh`.
+  The stale committed binaries were removed from the theta-agent repo.
+- **`SITE_SLUG` auto-derived from `CFG_SITE_NAME`.** Nothing ever set it
+  before, so a fresh master always showed the app's own literal
+  "site-default" fallback.
+- **`PROXY_INTERNAL_URL`/`JUMP_INTERNAL_URL` wired into `docker-compose.yml`.**
+  Both the no-inbound relay automation and the new real gateway-mesh count
+  existed in sso-manager-node's code but were completely unreachable in
+  every real deployment -- neither env var was ever actually set.
+- **`spoke.env.example`** -- a dedicated file for the join-a-cluster vars,
+  split out of `setup.env` for clarity (which still has every option).
+  Layered on top of `setup.env` when present. Also adds `CFG_PUBLIC_DOMAIN`
+  (documented in the spec but never wired into setup.sh before).
+
+### sso-manager-node v2.6.0
+- Fixed duplicate access/admin groups accumulating on repeated resource
+  promotion (three independent copies of the same missing-existence-check
+  bug).
+- `GET /api/directory-admin/resources` no longer runs a full LDAP group
+  self-heal fan-out on every list -- moved to write-time, with an explicit
+  `POST /resources/heal-groups` for backfill.
+- Recovers an nmap scan that completed successfully despite a benign stderr
+  warning nmap itself prints (`node-nmap` treated it as a fatal failure).
+- The Multi-Site modal's gateway count now queries jump-host's real mesh
+  registry instead of an unrelated WireGuard subsystem.
+
 ## [v2.5.0] - 2026-08-10
 
 Rolls up **sso-manager-node v2.5.0** and **jump-host v2.1.1** — closes the
