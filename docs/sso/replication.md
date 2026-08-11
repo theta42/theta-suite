@@ -41,13 +41,37 @@ site-ldap-register.js` applies it and re-checks on every `setup.sh` run,
 since the peer list grows as new spokes join, restarting `sso-manager` only
 when the computed config actually changed.
 
-**Known limitation**: the *master's* own `LDAP_REPLICATION_HOSTS` only gets
-recomputed when its `setup.sh` is re-run — there's no live push telling an
-already-running master about a spoke that joined five minutes ago. Re-run
-`setup.sh` on the master after bringing up a new spoke (or after promoting
-one to master) to pick up the current peer list. A spoke's own config, by
-contrast, is re-checked and applied on every `setup.sh` run there, which is
-the common/recurring event.
+**This is applied live — you do not re-run `setup.sh` anywhere.** Adding a
+site changes what *every* existing site's peer list should contain, so any
+design where replication config only lands via `setup.sh` means an operator
+ritual on every node, and silently divergent replication until they perform
+it. That is not how it works:
+
+- `slapd` runs from the **`cn=config` dynamic backend** (converted from the
+  generated `slapd.conf` seed at container start), which makes `olcServerID`
+  and `olcSyncrepl` modifiable while it is serving.
+- Theta Directory converges its own running config whenever the cluster
+  changes — a spoke registering or being removed, a join, a resync, a
+  promotion, and at boot, plus a periodic sweep as a backstop. It reads the
+  live config, computes the delta, and applies only what differs, so
+  re-applying the same state is a no-op.
+- No restart, no downtime, no operator step. A site that was offline while
+  the cluster changed converges on its own when it comes back.
+
+ServerID uniqueness is enforced by a unique index on the master's registry,
+not just by the allocation code. Two spokes registering at the same instant
+used to be handed the same ID, which does not error anywhere -- it quietly
+breaks replication, because `ServerID` is how `syncrepl` tells originators
+apart. A master upgrading from a build that had this bug repairs any existing
+duplicates at startup (the oldest registration keeps its ID; the others are
+moved and re-read theirs on the next reconcile) and logs each reassignment.
+
+The Multi-Site modal still shows this node's live `ServerID`/peer count, and
+still badges **Peer list out of sync** if the running config and the cluster's view
+ever disagree. That badge is now a *fault indicator*, not an instruction: it
+means the automatic path failed somewhere (a spoke that could not reach its
+master, an `ldapmodify` that was rejected) and is worth investigating rather
+than papering over. Under normal operation it never appears.
 
 ### Manual configuration
 
