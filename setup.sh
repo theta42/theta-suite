@@ -1069,6 +1069,44 @@ env_upsert SSO_GIT_COMMIT "$SSO_GIT_COMMIT"
 # CFG_LDAP_MMR_MANUAL=true so a manually hand-set LDAP_SERVER_ID/
 # LDAP_REPLICATION_HOSTS in setup.env isn't clobbered by a stale auto file.
 [[ "${CFG_LDAP_MMR_MANUAL:-false}" != "true" && -f "$CONFIG_DIR/ldap-replication.env" ]] && parse_kv_file "$CONFIG_DIR/ldap-replication.env"
+
+# Stage the theta-agent install resources the Directory serves from
+# /resources/theta-agent/... (bind-mounted from $CONFIG_DIR/resources). The
+# Windows setup.exe is a release artifact, not committable, so fetch the one
+# that matches THIS suite's pinned theta-agent version (the submodule tag) --
+# "latest" drifts and would mislead the SSO's Install Agent page.
+mkdir -p "$CONFIG_DIR/resources/theta-agent"
+cp -f sso-manager-node/nodejs/public/resources/theta-agent/install.sh \
+      "$CONFIG_DIR/resources/theta-agent/install.sh" 2>/dev/null || true
+AGENT_TAG="$(git -C theta-agent describe --tags --exact-match HEAD 2>/dev/null || git -C theta-agent describe --tags 2>/dev/null || true)"
+if [[ -n "$AGENT_TAG" ]]; then
+	WIN_SETUP="theta-agent-${AGENT_TAG#v}-windows-amd64-setup.exe"
+	WIN_SETUP_URL="https://github.com/theta42/theta-agent/releases/download/${AGENT_TAG}/${WIN_SETUP}"
+	info "Staging Windows theta-agent installer ${WIN_SETUP} for the Directory to serve..."
+	if ! curl -fsSL -o "$CONFIG_DIR/resources/theta-agent/$WIN_SETUP" "$WIN_SETUP_URL" || [[ ! -s "$CONFIG_DIR/resources/theta-agent/$WIN_SETUP" ]]; then
+		rm -f "$CONFIG_DIR/resources/theta-agent/$WIN_SETUP"
+		warn "Could not download ${WIN_SETUP} from ${WIN_SETUP_URL}. The Directory's Install Agent page will not be able to serve a Windows installer until it is staged (re-run setup.sh, or place the file in $CONFIG_DIR/resources/theta-agent/)."
+	else
+		if curl -fsSL -o "$CONFIG_DIR/resources/theta-agent/SHA256SUMS" \
+			"https://github.com/theta42/theta-agent/releases/download/${AGENT_TAG}/SHA256SUMS" \
+			&& [[ -s "$CONFIG_DIR/resources/theta-agent/SHA256SUMS" ]]; then
+			expected="$(awk -v f="$WIN_SETUP" '$2==f {print $1}' "$CONFIG_DIR/resources/theta-agent/SHA256SUMS")"
+			actual="$(sha256sum "$CONFIG_DIR/resources/theta-agent/$WIN_SETUP" | awk '{print $1}')"
+			if [[ -n "$expected" && "$expected" != "$actual" ]]; then
+				warn "SHA256 mismatch for ${WIN_SETUP}; removing the staged file."
+				rm -f "$CONFIG_DIR/resources/theta-agent/$WIN_SETUP"
+			else
+				# Stable-name alias so the SSO's Install Agent page can serve
+				# "the current Windows installer" without knowing the version.
+				cp -f "$CONFIG_DIR/resources/theta-agent/$WIN_SETUP" \
+					"$CONFIG_DIR/resources/theta-agent/theta-agent-windows-amd64-setup.exe"
+			fi
+		fi
+	fi
+else
+	warn "Could not resolve the pinned theta-agent version; skipping the Windows installer fetch (install.sh is still staged)."
+fi
+
 info "Building + starting sso-manager (first run builds the image; this takes a while)..."
 "${COMPOSE[@]}" up -d --build sso-manager
 

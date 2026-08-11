@@ -111,6 +111,15 @@ services:
       # Bind-mount the bootstrap script so `docker compose exec sso-manager node
       # /bootstrap/bootstrap.js` can run it (read-only).
       - ./bootstrap:/bootstrap:ro
+      # Agent install resources. The image bakes in nodejs/public/resources at
+      # build time (currently just install.sh), but the Windows setup.exe is a
+      # 60+ MB release artifact that must NOT be committed. setup.sh stages
+      # install.sh + the matching theta-agent Windows installer into
+      # ./config/resources and this mount serves them, so the SSO's Install
+      # Agent page can point PowerShell at /resources/theta-agent/... instead
+      # of GitHub. (Overrides only the resources subdir; the web UI assets in
+      # /app/public stay from the image.)
+      - ./config/resources:/app/public/resources
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3001/health"]
       interval: 30s
