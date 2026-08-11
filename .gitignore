@@ -19,6 +19,11 @@ proxy.env
 # per-deployment and is not committed.
 setup.env
 
+# spoke.env — same rule as setup.env, but for the join-a-cluster vars split
+# out for clarity (spoke.env.example IS committed). Holds a real site join
+# key once filled in.
+spoke.env
+
 # Backup artifacts (hold secrets — the whole user directory + Redis dumps)
 *.rdb
 *.ldif

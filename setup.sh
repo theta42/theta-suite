@@ -200,6 +200,10 @@ fi
 # later steps can use it. The authoritative CFG_* for secrets are still
 # resolved in ensure_config; this is only the hostname override.
 [[ -f ./setup.env ]] && parse_kv_file ./setup.env
+# spoke.env (optional, see spoke.env.example): the join-a-cluster vars split
+# out of setup.env for clarity, layered on top so its values win over any
+# same-named ones in setup.env. Same first-run-only rule as setup.env below.
+[[ -f ./spoke.env ]] && parse_kv_file ./spoke.env
 export CFG_JUMP_HOST
 CFG_CREATE_ALL_HTTP="${CFG_CREATE_ALL_HTTP:-0}"
 export CFG_CREATE_ALL_HTTP
@@ -467,6 +471,10 @@ BAOEOF
 		info "Reading domain/hosts from ./setup.env ..."
 		parse_kv_file ./setup.env
 	fi
+	if [[ -f ./spoke.env ]]; then
+		info "Reading multi-site join config from ./spoke.env ..."
+		parse_kv_file ./spoke.env
+	fi
 
 	# Bind the CFG_* vars to empty where setup.env / the environment didn't set
 	# them, so the .env migration's `${LDAP_X:-$CFG_X}` defaults below don't trip
@@ -540,9 +548,25 @@ BAOEOF
 	[[ -n "$CFG_DOMAIN" ]] \
 		|| die "First run: 'cp setup.env.example setup.env', set CFG_DOMAIN to your domain (e.g. example.com), then re-run ./setup.sh"
 	CFG_BASE_DN="${CFG_BASE_DN:-$(dn_from_domain "$CFG_DOMAIN")}"
-	CFG_SSO_HOST="${CFG_SSO_HOST:-sso.$CFG_DOMAIN}"
-	CFG_PROXY_HOST="${CFG_PROXY_HOST:-proxy.$CFG_DOMAIN}"
+	# CFG_PUBLIC_DOMAIN (MULTI_SITE_SPEC.md §4): an inbound spoke's own public
+	# web domain, independent of CFG_DOMAIN. CFG_DOMAIN is the LDAP identity
+	# namespace and MUST be identical across every site (MMR replicas can't
+	# diverge on base DN) -- CFG_PUBLIC_DOMAIN only changes where the web
+	# hostnames point, never the DN. Unset (the default): behaves exactly as
+	# before, hostnames derive from CFG_DOMAIN like any standalone install.
+	CFG_SSO_HOST="${CFG_SSO_HOST:-sso.${CFG_PUBLIC_DOMAIN:-$CFG_DOMAIN}}"
+	CFG_PROXY_HOST="${CFG_PROXY_HOST:-proxy.${CFG_PUBLIC_DOMAIN:-$CFG_DOMAIN}}"
 	CFG_SITE_NAME="${CFG_SITE_NAME:-local}"
+	# Multi-site identity (site_config.js's `siteSlug`, shown on the Directory's
+	# Multi-Site modal) -- without this it's never set anywhere and every fresh
+	# master shows the module's own literal fallback, "site-default", forever.
+	# Derived from CFG_SITE_NAME with the same slugify rule bootstrap.js uses
+	# for the site Resource's own slug (site_$(slugify), underscore prefix --
+	# this is hyphenated to match site_config.js's own "site-default" format).
+	# site.json overrides this after first bring-up (join/promote write real
+	# values there), so this only ever matters for a fresh install.
+	SITE_SLUG="site-$(echo "$CFG_SITE_NAME" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+|-+$//g')"
+	export SITE_SLUG
 	CFG_ORG="${CFG_ORG:-Theta Directory}"
 	CFG_ADMIN_UID="${CFG_ADMIN_UID:-admin}"
 	CFG_ADMIN_EMAIL="${CFG_ADMIN_EMAIL:-admin@$CFG_PROXY_HOST}"
