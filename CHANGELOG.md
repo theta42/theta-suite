@@ -9,6 +9,88 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [jump-host](https://github.com/theta42/jump-host/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v2.10.0] - 2026-08-11
+
+Rolls up **theta-directory v2.9.0** and **jump-host (Theta Gateway) v2.2.0**.
+
+Four things `docs/MULTI_SITE_SPEC.md` described as shipped had never worked
+end to end. Each failed only into a note string or a swallowed exception no
+test asserted on, so every existing test stayed green: the join's LDAP tree
+import, catalog updates/deletions reaching a spoke, promotion with more than
+two sites, and the mesh carrying any service traffic. All four are fixed and
+covered by real multi-container tests.
+
+The `setup.sh`-re-run-on-every-site ritual for LDAP replication is gone from
+the product, not just from the docs.
+
+### theta-directory v2.9.0
+
+Fixed:
+- **The multi-site join's LDAP import had never worked.** Three stacked
+  defects — a missing `argv[0]` (`spawn -c ENOENT`), operational attributes
+  `slapcat` emits that `ldapadd` rejects, and `ldapadd -c` exiting non-zero
+  on the benign "Already exists" every spoke produces. A spoke adopted the
+  catalog and signing key but not one user or group.
+- **Catalog updates and deletions never reached a spoke.** `importDirectory()`
+  called `Resource.update`/`ResourceEdge.delete` as statics, which
+  `@simpleworkjs/orm` has never had. The test stubs implemented them as
+  statics, which is why the suite stayed green. The import is also converging
+  now rather than destructive.
+- **Promotion orphaned every site beyond the second.** The promoted node was
+  a spoke, so its own registry was empty and the fan-out reached nobody.
+  `/demote` now hands over its registry (including push tokens) and each
+  sibling is re-pointed via the new `POST /api/site/master-changed`.
+- **The mesh carried no service traffic.** Consumers dialled an address that
+  exists only inside the peer gateway's network namespace.
+- **Concurrent spoke registrations were assigned the same LDAP ServerID**,
+  which does not error — it quietly breaks MMR. Now serialized, and enforced
+  by a database unique index: `@simpleworkjs/orm` drops `unique` for integer
+  fields and calls `sequelize.sync()` with no options, so a declared
+  constraint never reached the database on any deployed site. Existing
+  duplicates are repaired at boot before the index is added.
+- **A base-DN mismatch between sites now fails the join up front** instead of
+  half-succeeding.
+- **LDAP tunnel relay sockets were unbounded** (no idle timeout, connect
+  deadline, or per-agent ceiling), and cleanup tore down a reconnecting
+  agent's new sockets along with the old ones.
+- **The Multi-Site modal's confirmations did nothing** — `app.messages.confirm()`
+  needs a `.actionMessage` element and its promise never settles without one.
+
+Added:
+- **LDAP replication config is applied live** — `slapd` runs from the
+  `cn=config` dynamic backend, so `olcServerID`/`olcSyncrepl` are modifiable
+  while it serves. Config converges on spoke registration/removal, join,
+  resync, master-changed, promotion, boot, and a periodic sweep. No restart,
+  no operator step, on any node. Drift detection is retained as a fault
+  indicator.
+- Registered Spokes is actionable: list, remove, and "Sync now" (awaited, so
+  reachability is reported honestly).
+- `POST /api/site/reregister` — recovery when a spoke and its master disagree
+  about the push token.
+- Three-site e2e covering promotion handoff, live replication config, LDAP
+  tree replication, and catalog convergence.
+
+### jump-host (Theta Gateway) v2.2.0
+
+- **Mesh service forwarding** (`services/mesh_forwarder.js`) — the data plane
+  the mesh control plane assumed but never had. WireGuard runs inside the
+  gateway's network namespace, so the `172.24.<idx>.1` mesh IP a gateway
+  reports is unreachable from the sibling containers told to use it, and
+  nothing listened on `:3001` there in any case. Now bridged in userspace both
+  ways: ingress `172.24.<own>.1:3001 -> sso-manager:3001`, egress
+  `0.0.0.0:<30000+peer> -> 172.24.<peer>.1:3001`. Ports are derived from the
+  peer's mesh index, so nothing is stored or discovered. Forwarders reconcile
+  on every mesh change.
+- Tested with two real gateways over real WireGuard: an HTTP request crosses
+  the tunnel and reaches the far site's service in both directions, and a
+  removed peer's forwarder stops serving.
+
+### Docs
+- **`docs/MULTI_SITE_SPEC.md` status table corrected.** Several things this spec described as shipped had never worked end to end — the join's LDAP import, catalog updates/deletions reaching a spoke, promotion with more than two sites, and the mesh carrying any service traffic. Each failed only into a note string or a swallowed exception no test asserted on. All are fixed and covered by real multi-container tests; the spec now says so, and says plainly that "verified" in its earlier revisions meant "returned 200", not "the effect was observed".
+- **The `setup.sh`-re-run ritual is gone from the docs because it is gone from the product.** `docs/sso/replication.md` and `docs/sso/multi-site.md` previously told operators to re-run `setup.sh` on every site after any site joined; replication config is now applied live against `cn=config`. The Multi-Site modal's drift badge is documented as a fault indicator rather than a chore.
+- `docs/jump-host/mesh.md` documents what actually crosses the tunnel (the gateway's ingress/egress forwarders and the derived per-peer port).
+- `docs/sso/replication.md` states that LDAP ServerID uniqueness is enforced by a database constraint rather than by allocation code alone, and that a master upgrading from an affected build repairs existing duplicates at startup.
+
 ## [v2.9.0] - 2026-08-11
 
 Rolls up **theta-agent v2.3.0** — the Windows agent finally gets its missing

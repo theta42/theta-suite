@@ -64,9 +64,62 @@ replication](#how-this-relates-to-ldap-replication) below.
 If the master site goes down for good (or you're relocating write
 authority), a `god_admin` can promote any spoke from its own Master Site
 modal. Promotion is one coordinated action: it demotes the previous master as
-part of the same request (best-effort — an unreachable old master never
-blocks the promotion, since that's exactly the scenario this exists for), and
-every other spoke gets pointed at the new master automatically.
+part of the same request, inherits that master's spoke registry, and re-points
+every other site in the cluster at the newly-promoted node — no per-spoke
+operator action.
+
+The one case that needs you: if the **old master is unreachable**, the
+promotion still succeeds locally (that is exactly the scenario it exists for)
+but there is nothing to inherit the registry from, so the other spokes stay
+pointed at the master that is gone. The promotion result reports this as
+orphaned siblings. Recover by re-registering each remaining spoke against the
+new master (Multi-Site modal → **Re-register** on that spoke).
+
+The promoted node's new LDAP ServerID (1) and its inherited peer list are
+applied to its running `slapd` automatically, as part of the same promotion —
+no `setup.sh` re-run, no restart.
+
+## The Multi-Site modal
+
+Everything below lives in Directory → the Multi-Site modal, and it is worth
+knowing what each part is telling you.
+
+**LDAP Replication (MMR)** shows this node's live `slapd` state, read out of
+the running `cn=config` — not what the cluster merely intends:
+
+- `ServerID <n>` / `<n> peers` — what this node's `slapd` is actually
+  replicating with right now.
+- **Peer list out of sync** / **ServerID out of sync** — the running config and
+  the cluster's view disagree. Under normal operation you should never see
+  this: replication config is applied automatically and live (see
+  [LDAP replication](replication.html#automatic-config-via-multi-site-join)).
+  If it does appear, the automatic path failed — typically a spoke that
+  couldn't reach its master, or an `ldapmodify` slapd rejected — and the
+  container log's `[ldap-reconcile]` lines say which. Re-running `./setup.sh`
+  there is a way to force the issue, but the badge is a fault to investigate,
+  not a routine chore.
+- **Drift unknown** — the live config couldn't be read, or (on a spoke) the
+  master couldn't be reached to ask what this site's config should be. Not
+  the same as "in sync".
+
+**Registered Spokes** (master only) lists every site receiving replication,
+with actions per row:
+
+- **Sync now** (row) / **Sync all now** (header) — pushes a resync
+  immediately instead of waiting for the next catalog write, and *waits* for
+  the result, so a failure tells you that site is unreachable right now.
+- **Remove** — drops a site from the registry. Use it for a decommissioned
+  site: it stops replication pushes and frees that site's LDAP ServerID.
+  The removed site is not contacted (it may be gone), and keeps its own
+  read-only copy. Its syncrepl entry is dropped from this node's running
+  `slapd` as part of the removal — nothing else to do.
+
+**Live Replication** (spoke only) with a **Re-register** button. "Snapshot
+only" means this spoke is joined but not receiving live pushes — usually a
+join made without a self URL, or a registry row that was removed and
+recreated on the master, leaving the two ends disagreeing about the push
+token. Re-register fixes all of those; re-joining cannot, since a node that
+is already a spoke refuses to join again.
 
 ## What replicates
 
@@ -100,9 +153,8 @@ so on) are **not** currently synced — each site still generates its own.
 - Joining only ever happens on a **fresh install**. There's no way to merge
   an already-populated directory into a master's — re-provision the host
   first.
-- Promoting a spoke to master doesn't instantly finish reconciling OpenLDAP
-  replication (see below) — re-run `setup.sh` on the newly-promoted node
-  promptly afterward.
+- Promoting a spoke to master reconciles OpenLDAP replication on the promoted
+  node automatically (new ServerID + inherited peer list, applied live).
 
 ## How this relates to LDAP replication
 
@@ -119,9 +171,14 @@ endpoint — `theta-suite`'s `bootstrap/site-ldap-register.js` applies it,
 re-checked on every `setup.sh` run since the peer list grows as spokes join.
 You don't hand-set `LDAP_SERVER_ID`/`LDAP_REPLICATION_HOSTS` for a cluster
 built this way. See [Geo-Location Scaling](replication.html#automatic-config-via-multi-site-join)
-for the mechanics, and its documented limitation: the *master's* own
-replication list only updates on ITS next `setup.sh` run, not live the
-instant a new spoke joins.
+for the mechanics.
+
+**It is applied live, on every site, with no `setup.sh` re-run.** Joining a
+new site changes what every existing site's peer list should contain, so
+each node converges its own running `slapd` (via the `cn=config` dynamic
+backend) whenever the cluster changes — on registration, join, resync,
+promotion, at boot, and on a periodic sweep. Nothing to remember, no restart,
+and a site that was down while the cluster changed catches up by itself.
 
 Still want fully independent, always-writable sites with no master/spoke
 concept at all? `CFG_LDAP_MMR_MANUAL=true` opts out of the automatic path so

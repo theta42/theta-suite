@@ -48,6 +48,31 @@ the hard ceiling this addressing scheme supports.
 - `NET_ADMIN` capability (or equivalent) on the container/host running the
   gateway, to create the WireGuard interface.
 
+## What crosses the tunnel
+
+Two gateways meshing gives you a route between the gateways themselves. Site
+*services* (each site's Theta Directory) are reached through forwarders the
+gateway runs on both ends of the hop:
+
+- **Inbound**: the gateway answers on its own mesh address
+  (`172.24.<index>.1:3001`) and forwards to this site's directory.
+- **Outbound**: the gateway listens locally on `30000 + <peer index>` and
+  forwards over the tunnel to that peer's directory.
+
+So a component at site A reaches site B's directory at
+`<site A's gateway>:30000+<B's index>`. The port is derived from the mesh
+index, never configured — Theta Directory computes it the same way when it
+routes replication or creates a no-inbound relay route. Forwarders are
+reconciled whenever the mesh changes, so a newly-joined peer becomes
+reachable without restarting the gateway, and a removed one stops being
+reachable immediately.
+
+This matters because WireGuard runs inside the gateway container: the mesh
+subnet exists only in that container's network namespace, so the other
+containers at a site (directory, proxy) cannot route to a peer's mesh IP
+directly. They talk to their own local gateway instead, which is what these
+forwarders are for.
+
 ## Connected to directory sync
 
 [Theta Directory's multi-site join](../sso/multi-site.html) (catalog + LDAP
