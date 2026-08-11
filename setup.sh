@@ -1279,6 +1279,25 @@ NODEEOF
 )
 echo "$JUMP_HOSTS_OUT" | sed 's/^/[setup] /'
 
+# ── 7b2. No-inbound relay registration (first-run *and* every re-run) ─────────
+# CFG_SPOKE_NO_INBOUND: this site has no public IP, so the master relays to it
+# over the gateway-to-gateway WireGuard mesh (MULTI_SITE_SPEC.md §5.2). The
+# mesh peering itself is a manual, out-of-band step on both jump-hosts (mint a
+# join token on the master's jump-host, paste it into this site's jump-host
+# "Join a mesh" UI action) -- it can't run unattended here, and it commonly
+# happens AFTER this first setup.sh run finishes. So this step runs on every
+# invocation, not just first-run: it discovers this jump-host's mesh IP and
+# (re-)registers it with the master, and is a no-op until meshing is done.
+if [[ "${CFG_SPOKE_NO_INBOUND:-false}" == "true" ]]; then
+	if [[ -z "${CFG_SPOKE_PUBLIC_HOST:-}" ]]; then
+		warn "CFG_SPOKE_NO_INBOUND=true but CFG_SPOKE_PUBLIC_HOST is unset — skipping relay registration."
+	else
+		info "Checking no-inbound relay registration (CFG_SPOKE_PUBLIC_HOST=${CFG_SPOKE_PUBLIC_HOST})..."
+		"${COMPOSE[@]}" exec -T sso-manager node /bootstrap/site-relay-register.js \
+			"https://$CFG_SSO_HOST" "$CFG_SPOKE_PUBLIC_HOST" || warn "relay registration did not complete — check: ${COMPOSE[*]} exec sso-manager node /bootstrap/site-relay-register.js https://$CFG_SSO_HOST $CFG_SPOKE_PUBLIC_HOST"
+	fi
+fi
+
 # ── 7c. Install theta-agent on the host ──────────────────────────────────────
 # Controlled by CFG_THETA_AGENT_ENABLE (default: 1 = enabled)
 CFG_THETA_AGENT_ENABLE="${CFG_THETA_AGENT_ENABLE:-1}"
