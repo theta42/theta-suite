@@ -9,6 +9,95 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [jump-host](https://github.com/theta42/jump-host/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v3.3.0] - 2026-08-12
+
+  jump-host  v3.1.4 -> v3.1.5
+  proxy  v2.0.1 -> v2.1.0
+  sso-manager-node  v2.13.0 -> v2.14.0
+
+**Every list in the proxy updates itself now, and every list can be filtered.**
+Nothing in the suite auto-updated except one table, and the reasons turned out
+to be two bugs rather than a missing feature. Fixing them also closed a data
+leak on the socket bridge shared by all three apps.
+
+### proxy v2.1.0
+
+- feat: **every list is live and filterable.** Hosts, Permissions, Groups, DNS
+  providers and Dynamic A records use `app.filter.live()` from
+  `@simpleworkjs/frontend`: a change made by another admin, or by a background
+  job, patches the one affected row in place — so scroll position, checkbox
+  selection and open dropdowns survive it. Each list gains a search box and a
+  "shown" count; Hosts also gains a wildcard/single facet, and its search now
+  covers IP, port and DNS provider rather than the hostname alone.
+- fix: **only the Proxy List ever updated itself, because only `Host`
+  published events.** Every model registers a `ModelPs` proxy, but only
+  `host.js` *exported* it — the others exported the raw class, and the routes
+  import those files directly. `LocalGroup` and `Permission` published nothing
+  at all, so those pages were subscribed to events that were never sent.
+- fix: **`ModelPs` published the class name as the primary key.** `getIndex()`
+  read `model[Model._key]` with `model` being the class on a static call, and
+  every class has a built-in `.name` — so for any model keyed on `name`, the pk
+  of every event was the literal string `"LocalGroup"`. Creates appended a row
+  matching nothing; updates would have duplicated the record. `Host` behaved
+  only because its key is `host` and `Host.host` is undefined.
+- fix: the DNS and Permissions lists declared `jq-repeat-index` where
+  `jq-index-key` was meant. The former is an attribute jq-repeat *writes* onto
+  rendered rows and never reads as configuration, so those scopes had no key
+  and every `remove`/`update` lookup returned -1 — swallowed on the DNS page by
+  empty `catch{}` blocks, which made it look wired up while doing nothing.
+- security: **model events were broadcast to every authenticated socket.**
+  `app.io.emit` sent every event, with its full record, to every connected
+  client with no per-model or per-row read check — a viewer scoped to one
+  domain received live payloads for every other domain in the install. Events
+  are now gated per socket by `utils/socket_pubsub.js`, mirroring the REST read
+  guards, with resolved rights cached briefly and busted when a grant or group
+  membership changes. Models with no gate are not broadcast at all, so a new
+  model must opt in deliberately rather than start leaking the moment it is
+  wrapped in `ModelPs`.
+- security: **clients could inject topics.** `socket.on('P2PSub')` republished
+  anything a client emitted to every other client. No app code has ever called
+  `app.publish()`, so nothing legitimate used it; events now flow
+  server -> client only.
+- fix: a delete event carries a `null` body, and the client tagged it
+  unconditionally — throwing and killing the socket handler.
+
+### sso-manager-node v2.14.0
+
+- security: **the socket bridge rebroadcast whatever a client published.**
+  `socket.on('P2PSub')` took any topic and payload an authenticated client
+  emitted and fanned it out to every other connected client. Nothing
+  legitimate used it. Events now flow server -> client only.
+- security: the outbound side was an unconditional `app.io.emit` of every event
+  to every authenticated socket. Nothing here publishes model events yet, so it
+  carried no traffic — but it would have started leaking the moment anything
+  did. Replaced by `utils/socket_pubsub.js`, a per-socket read gate whose
+  `READERS` table is **empty by design**: nothing is broadcast until a model
+  opts in together with the check that decides who may see its events.
+- fix: a `null` delete body killed the client socket handler.
+- feat: the shared UI shell loads `app.sync.js` and `app.filter.js`, so views
+  here can adopt live updates and filtering.
+- chore: `authIO` records the session's groups on the socket, which is what a
+  read gate resolves rights from.
+
+### jump-host v3.1.5
+
+- feat: the shared UI shell loads `app.sync.js` and `app.filter.js`.
+- chore: removed the client-side publish forwarding from `app-base.js`. This
+  app attaches socket.io only to serve the client library, so there was no
+  bridge to secure here — but the code was dead weight, and its twin in the
+  other two apps was the injection path described above.
+- fix: a `null` delete body killed the client socket handler.
+
+### Framework
+
+Requires `@simpleworkjs/frontend` >= 0.3.0 (`app.sync.bind()` and
+`app.filter`); 0.3.1 adds three fixes found by driving 0.3.0 in a browser —
+rows carrying a Bootstrap `d-flex`/`d-block`/`d-grid` class were never actually
+hidden (jQuery's `.hide()` writes a non-important inline style, which loses to
+those `!important` utilities), a stale filter count, and pk precedence. The
+apps depend on `^0.3.0`, which 0.3.1 satisfies, so a routine `npm install`
+picks it up.
+
 ## [v3.2.0] - 2026-08-12
 
   jump-host  v3.1.3 -> v3.1.4
