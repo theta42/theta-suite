@@ -9,6 +9,20 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [jump-host](https://github.com/theta42/jump-host/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v3.6.1] - 2026-08-12
+
+  proxy  v2.1.0 -> v2.1.1
+  jump-host  v3.1.5 -> v3.1.6
+
+- fix: **filtered rows carrying a Bootstrap display utility were never actually
+  hidden** in the proxy. jQuery's `.hide()` writes a plain inline
+  `display: none`, which loses to `.d-flex` / `.d-block` / `.d-grid` because
+  those are `!important` in Bootstrap's stylesheet. The Permissions list and the
+  Dynamic A records list are both built from `list-group-item d-flex` rows, so
+  their search reported the right count while every row stayed on screen. Also
+  fixes the filter count going stale after a row arrived live ("6 of 4 shown").
+  Both come from `@simpleworkjs/frontend` 0.3.1, now on all three apps.
+
 ## [v3.6.0] - 2026-08-12
 
   sso-manager-node  v2.16.1 -> v2.17.0
