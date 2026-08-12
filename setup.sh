@@ -1360,7 +1360,11 @@ info "Installing theta-gateway on this host..."
 $SUDO mkdir -p "$GATEWAY_CONFIG_DIR"
 $SUDO install -m 0600 ./config/jump-secrets.js "$GATEWAY_CONFIG_DIR/jump-secrets.js"
 
-if ! JUMP_SSH_PORT="${JUMP_SSH_PORT:-2222}" $SUDO -E ./jump-host/install.sh; then
+# `env` rather than sudo's -E: $SUDO is EMPTY when already root, so `$SUDO -E`
+# left a bare `-E` as the command. `env VAR=... cmd` works identically with and
+# without sudo in front of it, and passes the variable explicitly rather than
+# relying on sudo preserving the environment.
+if ! $SUDO env JUMP_SSH_PORT="${JUMP_SSH_PORT:-2222}" ./jump-host/install.sh; then
 	die "theta-gateway install failed — see: journalctl -u theta-gateway -n 50"
 fi
 
