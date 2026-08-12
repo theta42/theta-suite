@@ -288,7 +288,9 @@ docker compose logs -f
 # One service
 docker compose logs -f sso-manager
 docker compose logs -f proxy
-docker compose logs -f jump-host
+
+# The gateway runs on the host, not in compose — its logs are in the journal
+journalctl -u theta-gateway -f
 
 # Last 200 lines and keep following
 docker compose logs --tail=200 -f proxy
@@ -478,7 +480,7 @@ exactly in the bootstrap) so the SSO can verify them on bind.
 theta-suite/
 ├── setup.env.example   # first-run config template — cp to setup.env, set CFG_DOMAIN
 ├── config.example/      # committed annotated config templates (copy to ./config/)
-├── docker-compose.yml   # sso-manager + proxy + jump-host + openbao on one bridge net
+├── docker-compose.yml   # sso-manager + proxy + openbao on one bridge net (gateway is host-installed)
 ├── setup.sh             # one-command idempotent bring-up (manages ./config/ + backups)
 ├── bootstrap/
 │   └── bootstrap.js      # runs in the sso-manager container

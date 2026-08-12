@@ -35,7 +35,11 @@ const fs = require('fs');
 
 const SITE_CONFIG = '/config/site.json';
 const JUMP_SECRETS = '/config/jump-secrets.js';
-const JUMP_INTERNAL = 'http://jump-host:3002';
+// The gateway runs on the host now, not as a compose service, so `jump-host`
+// does not resolve from inside the container. setup.sh wires JUMP_INTERNAL_URL
+// to http://host.docker.internal:3002 (see docker-compose.yml's extra_hosts);
+// fall back to a sensible host-gateway default if that env var is missing.
+const JUMP_INTERNAL = process.env.JUMP_INTERNAL_URL || 'http://host.docker.internal:3002';
 
 const selfUrl = process.argv[2];
 const publicHost = process.argv[3];
