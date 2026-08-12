@@ -9,6 +9,37 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [jump-host](https://github.com/theta42/jump-host/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v3.5.0] - 2026-08-12
+
+  sso-manager-node  v2.15.0 -> v2.16.0
+
+**Storage backend no longer decides whether a page can update itself.**
+
+- feat: model events are standardized. The ORM announced changes for models it
+  managed; everything else was silent, so LDAP groups and users, Redis-backed
+  notifications and PATs could not update a view no matter what the view did.
+  They now publish the identical contract — `model:<Name>:<action>` carrying
+  `{model, action, pk, data}` — so a subscriber cannot tell which backend a
+  model uses. `data` goes through `toJSON()` (stripping `isPrivate` fields) and a
+  delete never carries a body, enforced in the emitter rather than trusted to
+  each call site. ORM and bespoke models share one filtered bus, so "does this
+  model have a read gate?" is answered in exactly one place.
+- feat: LDAP groups and users announce create/update/delete, and the users and
+  profile views consume them — a user added, or a group membership changed, by
+  another admin now shows up without a refresh. That includes someone's own
+  profile, where a stale page is most misleading, since it is showing them their
+  own access.
+- security: read gates for every model whose data the UI renders. Several are
+  row-level rather than merely model-level: a user receives their own User
+  record, notifications, PATs and mesh clients and nobody else's, while a
+  directory admin receives all of them except PATs — which have no admin path
+  because the REST route has none either.
+- security: User payloads strip `userPassword` explicitly. It IS present on a
+  record read with `attributes: ['*','+']` as the admin bind, and stayed off the
+  wire only because `user_parse()` sets it to `undefined` inside an `if` branch —
+  an incidental protection in an unrelated function, not somewhere to hang a
+  credential. Verified against the encoded socket frame, not just the object.
+
 ## [v3.4.0] - 2026-08-12
 
   sso-manager-node  v2.14.0 -> v2.15.0
