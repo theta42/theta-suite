@@ -9,6 +9,32 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [jump-host](https://github.com/theta42/jump-host/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v3.6.0] - 2026-08-12
+
+  sso-manager-node  v2.16.1 -> v2.17.0
+
+- feat: **the Network and Overview tabs update themselves.** Network's three
+  models already published and already carried socket read gates — the view
+  simply never subscribed. Overview's notification history follows
+  `Notification`, and its stats card follows `User` and `Resource` rather than
+  inventing a "stats" record to publish: the aggregate is derived, and the
+  things it derives from already announce themselves. Each list and panel
+  reloads only its own fetch, debounced.
+- feat: Redis-backed models can announce their own writes. `Notification` and
+  `ApiToken` have no custom mutators, so `withEvents()` wraps create/update/
+  remove on the class — deliberately not a Proxy over the class, which is the
+  approach that published the *class* name as the primary key for every model
+  keyed on `name`.
+- fix: `ApiToken` payloads carry no `secret_hash` — asserted against the
+  serialized payload rather than the object, since a key is "in" an object even
+  when its value is undefined.
+- note: the Overview metrics panel is **not** live. It reads failed-login and
+  service-usage counters incremented outside any model write, so no model event
+  corresponds to them; that panel needs its own emit where the counters change.
+- chore: `@simpleworkjs/frontend` 0.3.1 across all three apps — filtered rows
+  carrying a Bootstrap `d-flex`/`d-block`/`d-grid` class are actually hidden
+  now, and the filter count no longer goes stale.
+
 ## [v3.5.1] - 2026-08-12
 
   sso-manager-node  v2.16.0 -> v2.16.1
