@@ -9,6 +9,30 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [jump-host](https://github.com/theta42/jump-host/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v3.1.3] - 2026-08-12
+
+  jump-host  v3.1.2 -> v3.1.3
+
+- fix: **the host gateway's `VAULT_TOKEN` was always empty.** `setup.sh`
+  minted `JUMP_VAULT_TOKEN` into `./.env` via `ensure_token` but never
+  exported it, so the gateway env got `VAULT_TOKEN=` and never read
+  `secret/jump-host/conf` from OpenBao, booting from the file-loaded fallback
+  instead. It now reads the token back out of `./.env` and writes it into
+  `/etc/theta-gateway/gateway.env`.
+- fix: **the mDNS local-discovery announcer was inert in any stock
+  deployment.** `THETA_LOCAL_DISCOVERY_HOSTS` and `SITE_SLUG` were never set,
+  so the gateway's `mdns_announce` logged "nothing to announce, skipping".
+  `setup.sh` now sets both in the gateway env — defaulting to this site's SSO,
+  proxy and jump hostnames, with `CFG_LOCAL_DISCOVERY_HOSTS` to override or
+  set empty to disable — so LAN-local theta-agents can skip the relay.
+- fix: **upgrading a live gateway no longer fails its port check.**
+  (jump-host v3.1.3) `install.sh`'s `ss -lntp` conflict check could not tell
+  the gateway's own SSH front door from an unrelated process; it now only
+  fails when somebody other than the active `theta-gateway` service owns the
+  port.
+
+---
+
 ## [v3.1.2] - 2026-08-12
 
   jump-host  v3.1.1 -> v3.1.2
