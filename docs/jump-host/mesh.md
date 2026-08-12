@@ -138,9 +138,16 @@ The packet reaches `wg0`, WireGuard looks up the destination, finds whichever
 peer owns `0.0.0.0/0`, and sends it there.
 
 So each exit gets its own interface with a single peer holding the default
-route, and policy routing picks the interface per device. Exit sites are
-consequently peered twice — once on the mesh for their network, once on their
-own interface for internet traffic.
+route, and policy routing picks the interface per device.
+
+That interface uses a **second keypair**, not the gateway's mesh key. A remote
+gateway keeps one endpoint and one session per peer *key*, so if both
+interfaces presented the same key the remote would see a single peer whose
+endpoint flapped between them, with the two continuously invalidating each
+other's session. Each gateway therefore publishes two public keys, and an exit
+site builds a separate peer entry for anyone exiting through it — allowed only
+the specific device addresses actually using the exit, since an exit is
+permission to send internet traffic, not a route into someone's network.
 
 ## Where the gateway runs
 
@@ -179,6 +186,16 @@ of the cluster, add two static routes on your router:
 
 This is strongly recommended. Without it, only devices with a VPN client can
 use the network; with it, every machine on your LAN can reach every site.
+
+## How quickly changes take effect
+
+Each gateway re-reads the directory and re-applies about once a minute, so a
+new site, a new device, or a changed exit becomes live on the **next pass** —
+worst case around 60 seconds, not instantly. The *Re-apply now* button on the
+gateway's status page forces it immediately.
+
+This is also why a freshly-started site can briefly show fewer peers than the
+roster lists: it has planned them and not yet applied them.
 
 ## Checking it
 
