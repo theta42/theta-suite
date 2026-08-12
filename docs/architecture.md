@@ -17,7 +17,7 @@ Theta Suite 2.0 is a production-grade **composition repository**: it composes ap
 | Subproject / Image | Component Role |
 |------|------|
 | [`theta42/theta-directory`](https://github.com/theta42/theta-directory) | **Theta Directory** — OIDC provider + OpenLDAP directory + Resource Catalog + Web Admin Console. All-in-one container. |
-| [`theta42/jump-host`](https://github.com/theta42/jump-host) | **Theta Gateway** — Directory-driven SSH access gateway and WireGuard mesh router with NETMAP shadow subnets. |
+| [`theta42/jump-host`](https://github.com/theta42/jump-host) | **Theta Gateway** — Directory-driven SSH access gateway and site router: WireGuard site-to-site mesh, per-user device VPN, per-device internet exits, and NETMAP shadow subnets. Holds no network config of its own; it applies the roster the directory publishes. |
 | [`theta42/theta-agent`](https://github.com/theta42/theta-agent) | **Theta Agent** — Multi-platform host telemetry, hardware details, desktop session controls, and secret delivery agent. |
 | [`theta42/proxy`](https://github.com/theta42/proxy) | **Theta Proxy** — OIDC-protected reverse proxy (OpenResty + Node management app + Redis). |
 | [`theta42/ldap-client`](https://github.com/theta42/ldap-client) | **ldap-client** — Enrolls real Linux hosts into the directory for PAM/SSSD login, sudo rules, and SSH keys. |
@@ -38,7 +38,7 @@ Theta Suite 2.0 is a production-grade **composition repository**: it composes ap
          ┌────────▼────────┐  ┌──────────▼────────┐         │
          │  theta-proxy     │  │  theta-gateway    │         │
          │  OpenResty       │  │  SSH Gateway      │         │
-         │  :80/:443/:4443  │  │  WireGuard Mesh   │         │
+         │  :80/:443/:4443  │  │  site router      │         │
          │  mgmt app :3000  │  └────────┬──────────┘         │
          └────────┬─────────┘           │ OIDC + LDAP        │
                   │ http:3001 (internal)│ via theta-directory
@@ -54,6 +54,24 @@ Theta Suite 2.0 is a production-grade **composition repository**: it composes ap
               │  :8200 (internal)             │     per-user + per-app KV
               │  :8080 (operator UI/API)     │
               └───────────────────────────────┘
+
+   The site network — every site that joins the directory is allocated one
+                 id (its LDAP ServerID), which becomes 172.24.0.<id> for its
+                 gateway and 10.<id>.0.0/16 for everything at that site. The
+                 gateway reads the roster from the directory and configures
+                 WireGuard, routes, NAT and LAN mapping from it; it publishes
+                 only its own public key and endpoint back. No gateway can
+                 write another site's config.
+                 See docs/jump-host/mesh.html.
+
+   Note the gateway is the ONE component not meant to live in the compose
+                 stack: it is a router, and routing the physical LAN (NETMAP,
+                 MASQUERADE out the real uplink, LAN machines reaching the
+                 mesh) cannot be done from inside a Docker network namespace.
+                 It belongs on the host, or in a VM/LXC. Until the host
+                 installer exists it still ships in docker-compose.yml with
+                 NET_ADMIN, meshing and serving device VPNs but not routing
+                 the LAN. See docs/jump-host/deployment.html.
 
    ldap-client — enrolls real Linux hosts into the directory above
                  (PAM/SSSD login, sudo, SSH-key serving); also the

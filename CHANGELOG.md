@@ -9,6 +9,198 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [jump-host](https://github.com/theta42/jump-host/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v3.0.0] - 2026-08-12
+
+The site network: every site that joins the directory gets a private network
+every other site can reach, a VPN for laptops and phones, and per-device
+internet exits.
+
+**Breaking.** Addressing changed and the gateway's own join flow is gone, so
+every existing site must be torn down and rebuilt. There is no migration path
+and none is intended.
+
+### The shape of it
+
+A site joins the directory and that is what puts it on the network. `siteId`
+IS the site's `ldapServerId` — already allocated once cluster-wide by the
+master at join — so the mesh has no allocator of its own and cannot disagree
+with LDAP about who is who. That number drives `172.24.0.<id>` for the
+gateway and `10.<id>.0.0/16` for everything at the site. It also caps a
+cluster at 254 sites, below LDAP's own 4094 ceiling, so addressing is now the
+binding constraint.
+
+Configuration lives in the directory; gateways apply it. Each gateway
+publishes only its own keys and endpoint, and the publish endpoint takes no
+site parameter — the row is chosen by which node you authenticated to — so a
+gateway structurally cannot rewrite another site's network.
+
+### Deployment change
+
+The gateway is a **router**, and every awkward part of running one inside a
+Docker network namespace is the router trying to escape it. It is meant to run
+on the host (or a VM/LXC). The host installer is not built yet, so it still
+ships in `docker-compose.yml` with `NET_ADMIN` — where it meshes, serves
+device VPNs and routes between sites, but **cannot** NETMAP the physical LAN
+or let LAN machines reach the mesh. See
+[Where the gateway runs](docs/jump-host/deployment.md).
+
+`docker-compose.yml` now publishes UDP 51820 and sets `THETA_MESH_ENDPOINT`.
+Without the port nothing can dial a site; without the endpoint the gateway
+publishes an empty one and every peer builds an entry it can never connect to,
+which looks exactly like a broken tunnel.
+
+Strongly recommended on each site's LAN router: `10.0.0.0/8` → the gateway's
+LAN address, and the site's own `10.<siteId>.0.0/16` on-link so local traffic
+does not hairpin.
+
+### theta-directory v2.12.0 (submodule `sso-manager-node`)
+
+The directory is now where the WireGuard cluster is configured. Sites, devices,
+LAN mapping and internet exits all live here; each site's gateway reads the
+roster and configures itself. Requires theta-gateway v3.0.0.
+
+- feat: **the site network.** A site that joins the directory is on the network
+  — no separate mesh to set up. `siteId` IS the site's `ldapServerId`, already
+  allocated once cluster-wide by the master at join time (under a lock, after
+  two spokes were once handed the same one), so the mesh needs no allocator of
+  its own. That one number drives LDAP replication, the gateway's
+  `172.24.0.<id>` address, and the site's `10.<id>.0.0/16`.
+- feat: **`/network` page**, visible to any signed-in user because enrolling
+  your own devices is not an admin task. Sites tab shows each site's addresses
+  and whether its gateway has actually published a key — joined-but-not-started
+  is a real state that used to look identical to healthy. Devices tab enrols
+  hardware and picks an exit. Exit Access tab is admin-only.
+- feat: **devices with optional key custody.** Supply a public key and the
+  private half never reaches the server; omit it and one is generated, rendered
+  into a config once, and forgotten — never stored, never logged, not
+  recoverable. Addresses come from the site's own pool, lowest-free so a
+  removed device returns its address rather than a counter marching upward.
+- feat: **per-device internet exits.** Two independent things: a site marked
+  `exitOpen` is saying it is *willing* to carry traffic; a grant says a user may
+  use it. Revoking a grant immediately drops affected devices back to local
+  breakout rather than leaving them routed somewhere they may no longer go.
+  Exit choice is a routing rule on the gateway, so switching exits produces a
+  byte-identical device config and needs no reconnect.
+- feat: **DNS is pushed as the mapped address, not the physical one.** A device
+  handed `192.168.1.1` only resolves while sitting on that LAN; over the tunnel
+  what is routed is the shadow range. The site form shows the translation as
+  you type and warns when an address is outside both mapped LANs, where it
+  cannot be mapped and devices would get no resolver at all.
+- feat: **MTU clamped to 1380** in device configs. Mesh-then-exit is WireGuard
+  inside WireGuard, and a device sized for one hop blackholes large packets on
+  the second — the classic "SSH works, HTTPS hangs".
+- feat: devices running theta-agent are configured over the agent's existing
+  websocket instead of a human copying a file. The push deliberately carries no
+  private key: the agent holds its own.
+- feat: the hub — the site carrying `10.0.0.0/8` as a catch-all — is chosen in
+  the UI rather than implied by which site holds the master directory, since
+  the natural hub is a cheap always-up VPS.
+- change!: `utils/mesh_route.js` stops being a workaround. It existed because
+  WireGuard lived inside the gateway container's namespace, so the only path to
+  a peer was a userspace relay on a port derived from the site index. A peer
+  site's directory is now simply `10.<siteId>.0.2:3001`, and the derived-port
+  contract the two repos had to keep in sync is gone. An address in the retired
+  scheme deliberately resolves to nothing rather than silently naming a
+  different site. The public-endpoint fallback stays, so a deployment whose
+  containers have no route into the mesh still replicates over the internet.
+- fix: **the roster now reaches every site.** It is written at each site (a
+  gateway publishes to its own directory) but replication only flows
+  master -> spoke, so two halves were missing: a spoke's public key never left
+  the spoke, and a spoke never learned any other site existed. Either alone
+  means the mesh works only at whichever site happens to be the master. Spokes
+  now forward their gateway details over `POST /api/site/spokes` — the channel
+  they already have, with the credential they already hold — and the master
+  carries the whole roster in its export. Roster edits push a resync
+  immediately instead of waiting for an unrelated catalog change. A site's own
+  row is never overwritten by an incoming export, since the local copy is
+  always at least as fresh.
+- fix: **exit interfaces need their own key.** A gateway's exit interface and
+  its mesh interface presented the same public key to the same remote, which
+  keeps one endpoint and one session per peer key — so the remote's endpoint
+  flapped between the two and they invalidated each other's session. Verified
+  against wireguard-go: with one key on two interfaces the remote settled on
+  whichever handshook last while both kept re-handshaking; with separate keys
+  it holds two stable peers. Gateways now publish a second `gatewayExitPublicKey`
+  and `GET /api/mesh/peers` tells an exit site which gateways to accept under
+  it, allowed only the device addresses actually using that exit.
+- docs: [The Site Network](docs/network.md).
+
+### theta-gateway v3.0.0 (submodule `jump-host`)
+
+**Breaking.** The gateway no longer holds any network configuration of its own.
+Sites, devices, LAN mapping and exits are configured in **theta-directory**; the
+gateway publishes its public key and endpoint and applies whatever the roster
+says. Addressing changed with it, so every site must be rebuilt.
+
+- feat!: **the gateway is a roster-driven router.** Joining the directory *is*
+  joining the mesh — the mint-token/register/join dance, the per-gateway
+  registry and its independently-allocated index are gone, along with the
+  second allocator that could disagree with the first. A site's id is its
+  `ldapServerId`, allocated once, cluster-wide, when it joined.
+- feat!: **new addressing.** `172.24.0.<siteId>/32` for a gateway's identity,
+  `10.<siteId>.0.0/16` for everything at that site, `10.<s>.128.0/17` for
+  devices, `10.<s>.168.0/24` and `10.<s>.172.0/24` for LAN mapping. One octet
+  per site caps a cluster at 254 — below LDAP's own 4094 ServerID ceiling, so
+  the addressing is now the binding constraint.
+- feat: **full router.** `ip_forward`, MASQUERADE on the auto-detected uplink,
+  stateful FORWARD rules, NETMAP of each site's physical LAN into a shadow /24,
+  and `rp_filter=0` — without which policy-routed exit traffic silently
+  blackholes while every other diagnostic looks healthy. Every iptables rule is
+  added behind a `-C` check, since reconcile runs at boot, on every roster
+  change, and on a timer.
+- feat: **per-device internet exits**, one WireGuard interface each.
+  `AllowedIPs` is a single trie per interface, so only one peer can own
+  `0.0.0.0/0` and the last to claim it silently takes it from the others; and
+  WireGuard routes on destination, ignoring the kernel nexthop, so
+  `default via <peer>` cannot select among exits. Devices are steered with
+  `ip rule from <device>/32`, so changing an exit rewrites one rule and never
+  touches the device — no reconnect, no reissued config.
+- fix: **registering a second peer used to delete the first.** `setPrivateKey`
+  applied the key with `wg setconf`, which replaces the whole device config and
+  removes every peer not in it. Verified against wireguard-go in the gateway
+  image: setconf takes 1 peer to 0, `wg set private-key` leaves 2 at 2.
+- fix: **the mesh never came back after a restart.** The registry was durable
+  and the interface was not, and nothing rebuilt one from the other. Now
+  reconciled at boot and on a timer.
+- fix: **`'(self)'` was trusted for identity.** That slug arrived in a remote
+  gateway's own registration body, so a peer could claim to be us. Identity now
+  comes from the public key, which never crosses the wire.
+- feat: directory config is cached in Redis and reconcile falls back to it, so
+  the gateway keeps routing through a directory outage.
+- feat: the mesh UI is now diagnostics — what the roster asked for, what is on
+  the wire, and where they disagree, with named callouts for the states that
+  otherwise look identical to healthy (no site id, stale config, interface
+  down, no uplink, no NETMAP support, an unbuildable exit).
+- removed: `services/mesh_forwarder.js`. It bridged traffic in userspace on a
+  port derived from the site index because WireGuard was trapped inside a
+  container namespace. With real routing a peer site's directory is just
+  `10.<n>.0.2:3001`.
+- removed: the roaming-client feature (`routes/wireguard.js`, `wg_peer`,
+  `wg_site`, `wg_conf`). It handed out configs and QR codes that could never
+  connect — no interface ever received a peer entry for them, and the endpoint
+  advertised pointed at the mesh interface, which held the same key but no
+  matching peer, so every config downloaded failed its handshake silently.
+  Devices are directory-managed now, with keys the server never stores. Its
+  `10.100.0.0/16` pool went too; that range collided exactly with a site
+  landing on id 100.
+- fix: **exit interfaces get their own keypair.** A remote gateway keeps one
+  endpoint and one session per peer KEY, so an exit interface presenting the
+  same key as the mesh interface made the remote's single peer entry flap
+  between the two while they invalidated each other's session — intermittent
+  breakage rather than a clean failure. Verified against wireguard-go in the
+  gateway image: one key on two interfaces left the remote pointed at whichever
+  handshook last, with both still re-handshaking; separate keys give two stable
+  peers. The gateway now publishes a second exit key, and an exit site builds a
+  peer entry for anyone exiting through it — allowed only the specific device
+  addresses using that exit, since an exit is permission to send internet
+  traffic, not a route into a network.
+- test: three-gateway end-to-end over real WireGuard
+  (`docker-compose.mesh-e2e.yml`). Three and not two deliberately — the
+  peer-wipe and index bugs above are both structurally invisible with one peer
+  per gateway.
+
+---
+
 ## [v2.12.0] - 2026-08-11
 
 Rolls up **theta-directory v2.11.0** — migrating an existing LDAP directory

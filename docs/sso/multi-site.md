@@ -144,10 +144,10 @@ so on) are **not** currently synced — each site still generates its own.
   pull an export from, the spoke to push replication updates back to. A site
   with **no inbound path at all** (e.g. behind CGNAT) can still join: set
   `CFG_SPOKE_NO_INBOUND=true` + `CFG_SPOKE_PUBLIC_HOST` (`spoke.env.example`)
-  once its jump-host is meshed to the master's over WireGuard (mesh peering
-  itself is a manual, one-time step on both jump-hosts — see [Theta Gateway
-  → Mesh](../jump-host/mesh.html)) — the master then relays traffic to it
-  and auto-creates the matching route on its own `theta-proxy`. A spoke with
+  — the master then relays traffic to it over the site network and
+  auto-creates the matching route on its own `theta-proxy`. There is no
+  separate mesh to set up first: joining the directory is what puts a site on
+  the network (see [The Site Network](../jump-host/mesh.html)). A spoke with
   **zero inbound and zero outbound** path still can't join at all (the join
   itself needs to reach the master's API directly).
 - Joining only ever happens on a **fresh install**. There's no way to merge
@@ -192,5 +192,6 @@ before this integration existed.
   in the `theta-suite` repo.
 - Endpoint-level detail: [`docs/site-join.md`](https://github.com/theta42/theta-directory/blob/master/docs/site-join.md)
   in the `theta-directory` repo.
-- Site-to-site networking (WireGuard mesh between gateways, independent of
-  directory sync): [Theta Gateway → Mesh](../jump-host/mesh.html).
+- Site-to-site networking, device VPN and internet exits — all keyed off the
+  same site id this join flow allocates: [The Site
+  Network](../jump-host/mesh.html).
