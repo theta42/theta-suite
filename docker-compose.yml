@@ -235,6 +235,10 @@ services:
     ports:
       - "${JUMP_SSH_PORT:-2222}:2222"   # SSH front door
       - "${JUMP_WEB_BIND:-0.0.0.0}:${JUMP_WEB_PORT:-3002}:3002"  # web UI/API
+      # The site network's WireGuard port. Without this published, other sites
+      # can never dial this one -- it could only ever reach out, and would be
+      # reachable back only through the hub.
+      - "${JUMP_WG_PORT:-51820}:51820/udp"
     environment:
       - NODE_ENV=production
       # Secrets are loaded by @simpleworkjs/conf from ./config/jump-secrets.js,
@@ -243,6 +247,11 @@ services:
       # (policy jump-host — read only secret/jump-host/conf).
       - VAULT_ADDR=http://openbao:8200
       - VAULT_TOKEN=${JUMP_VAULT_TOKEN:-}
+      # The host:port other sites dial for WireGuard. This gateway publishes it
+      # to the directory, and every peer builds its Endpoint from it -- so
+      # leaving it unset produces a site nothing can dial, which looks exactly
+      # like a broken tunnel. Defaults to the gateway's own public hostname.
+      - THETA_MESH_ENDPOINT=${CFG_JUMP_WG_ENDPOINT:-${CFG_JUMP_HOST:-}:${JUMP_WG_PORT:-51820}}
       # Optional upstream HTTP(S) proxy for outbound calls (the directory API
       # client) at runtime.
       - HTTP_PROXY=${CFG_HTTP_PROXY:-}

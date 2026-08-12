@@ -142,6 +142,13 @@ route, and policy routing picks the interface per device. Exit sites are
 consequently peered twice — once on the mesh for their network, once on their
 own interface for internet traffic.
 
+## Where the gateway runs
+
+On the host — not in the compose stack like everything else, because it is a
+router and the LAN-facing half of that cannot work from inside a Docker network
+namespace. [Where the gateway runs](deployment.html) covers the reasoning and
+what is currently limited while it still ships as a container.
+
 ## What the gateway needs
 
 - **In-kernel WireGuard** if available; it falls back to `wireguard-go`.

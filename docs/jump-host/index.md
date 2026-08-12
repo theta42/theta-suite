@@ -85,6 +85,7 @@ Theta Gateway answers both from your directory:
 - **Per-user key injection** — no downstream changes, no key distribution
 - **Shell, exec, and SFTP** bridging
 - **[The site network](mesh.html)** — cross-site routing, device VPN and internet exits
+- **[Where the gateway runs](deployment.html)** — why this component is not a container like the rest of the stack
 - **Web UI + HTTP API** for auditing and metrics — active sessions, a searchable
   audit log, per-user/per-host counters
 - **Full audit trail** — who, target, method, result, bytes, duration, and the

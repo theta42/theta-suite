@@ -64,6 +64,15 @@ Theta Suite 2.0 is a production-grade **composition repository**: it composes ap
                  write another site's config.
                  See docs/jump-host/mesh.html.
 
+   Note the gateway is the ONE component not meant to live in the compose
+                 stack: it is a router, and routing the physical LAN (NETMAP,
+                 MASQUERADE out the real uplink, LAN machines reaching the
+                 mesh) cannot be done from inside a Docker network namespace.
+                 It belongs on the host, or in a VM/LXC. Until the host
+                 installer exists it still ships in docker-compose.yml with
+                 NET_ADMIN, meshing and serving device VPNs but not routing
+                 the LAN. See docs/jump-host/deployment.html.
+
    ldap-client — enrolls real Linux hosts into the directory above
                  (PAM/SSSD login, sudo, SSH-key serving); also the
                  `ldap-test-host` fixture (opt-in: `--profile ldap-test`).
