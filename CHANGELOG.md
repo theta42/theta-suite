@@ -9,6 +9,24 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [jump-host](https://github.com/theta42/jump-host/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v3.8.1] - 2026-08-12
+
+- fix: **the jump host's web UI 502'd on every clean install.** setup.sh
+  registered the gateway with the proxy as `host.docker.internal`, a name that
+  `extra_hosts: host-gateway` puts in the container's `/etc/hosts` and nowhere
+  else. Docker's embedded DNS does not serve `extra_hosts` entries, nginx does
+  not read `/etc/hosts`, and the proxy's `proxy_pass` uses variables — so nginx
+  resolves the target per request through `resolver 127.0.0.11` and NXDOMAINs.
+  The failure is unusually misleading: `getent`, `curl` and `ping` inside the
+  proxy container all find the name, and `curl
+  http://host.docker.internal:3002/health` returns 200, because every one of
+  those reads `/etc/hosts`. Only the process that matters cannot see it.
+  Regressed in v3.1.0, when the gateway left the compose stack: until then the
+  target was `jump-host`, a real container name the embedded DNS answered.
+  setup.sh now resolves the gateway to an address once and registers that, and
+  a re-run updates a record pointing elsewhere — so an install left broken by an
+  older setup.sh heals itself rather than being skipped as "already exists".
+
 ## [v3.8.0] - 2026-08-12
 
   jump-host  v3.1.6 -> v3.2.0
