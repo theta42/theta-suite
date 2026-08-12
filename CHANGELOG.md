@@ -9,6 +9,38 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [jump-host](https://github.com/theta42/jump-host/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v3.7.0] - 2026-08-12
+
+  proxy  v2.1.1 -> v2.2.0
+  sso-manager-node  v2.17.0 -> v2.18.0
+
+Four more views stop lying about the current state.
+
+- feat: **the proxy's Profile page updates itself.** Your own record and your
+  own API tokens both sat static until a reload, because `User` and `ApiToken`
+  never published — only `Host` was ever exported wrapped. This is the page
+  where staleness misleads most: it is the one showing you your own access, so
+  an admin changing your groups left you reading the old answer indefinitely.
+- feat: **a model can narrow which of its writes announce themselves.**
+  `ApiToken` announces create and remove only: its best-effort `last_used_on`
+  write happens on every authenticated API call, and announcing that would put
+  an event on the socket per request. Previously the choice was all-or-nothing,
+  which is why it published nothing at all.
+- feat: **the Directory's Catalog and Discovered Inventory views update
+  themselves.** Both read models that already published and were already gated;
+  neither subscribed. The case that matters: an admin approves your access
+  request while the tile you are looking at still tells you that you cannot get
+  in.
+- fix: `User` and `ApiToken` hit the same export trap as `LocalGroup` and
+  `Permission` before them — registering a wrapped model only makes the wrapper
+  reachable through the model registry, and the routes import those files
+  directly. Three models deep now; worth a lint rule.
+- security: both new gates are row-level rather than model-level. `User` is
+  admin-or-self; `ApiToken` is owner-scoped with **no admin bypass**, matching a
+  REST route that has none either — a personal access token is nobody else's
+  business. Verified against the serialized socket frame: a PAT create carries
+  no `secret_hash`, a user create carries no password field.
+
 ## [v3.6.1] - 2026-08-12
 
   proxy  v2.1.0 -> v2.1.1
