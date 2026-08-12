@@ -17,7 +17,7 @@ The spoke's `theta-gateway` or `theta-proxy` periodically advertises itself via 
 - Advertised address: the service's own local LAN IP
 
 ### 2. Listener + Override (this doc's actual scope — theta-agent)
-- New config field in `agent.yml`, e.g. `prefer_local_discovered_directory: bool` (default `false` — opt-in, not automatic, since it changes name resolution behavior on the host).
+- New config field in `agent.yml`, e.g. `prefer_local_directory: bool` (default `false` — opt-in, not automatic, since it changes name resolution behavior on the host).
 - When `true`, the agent runs an mDNS browser for `_theta-suite._tcp.local` in the background.
 - On receiving an announcement whose `hosts` TXT list includes a hostname the agent cares about (at minimum: the hostname the agent itself is currently configured to connect to for its WS connection), the agent installs a **local override** redirecting that hostname to the discovered local IP.
 - No announcement seen (agent off-site, or flag disabled) → no override installed, normal DNS resolution applies. Nothing else about the agent's behavior changes in this case.

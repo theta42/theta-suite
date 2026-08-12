@@ -151,7 +151,7 @@ No public IP exists, so *any* external access must go through the master:
 A client physically on a no-inbound spoke's LAN would otherwise hairpin out to the master and back to reach its own local site. Solved via **mDNS local-service-discovery**, not directory-side network topology:
 
 1. The spoke's `theta-gateway`/`theta-proxy` announces itself on the local segment via mDNS (`_theta-suite._tcp.local`, TXT records: site slug, public hostnames it fronts, local IP).
-2. `theta-agent`, when a config flag (`preferLocalDiscoveredDirectory` or similar — see the agent-side spec, Appendix B) is enabled, listens for this announcement and overrides local resolution for matching hostnames to the discovered local IP.
+2. `theta-agent`, when a config flag (`prefer_local_directory` or similar — see the agent-side spec, Appendix B) is enabled, listens for this announcement and overrides local resolution for matching hostnames to the discovered local IP.
 3. No match (off-site, or flag disabled) → normal public DNS → master relay. Multicast is link-local by nature, so "on-site or not" needs no explicit detection logic — presence/absence of the announcement *is* the signal. This also solves roaming-admin access (§ formerly "5", folded in here) for free: same laptop, same flag, local-fast-path at the office and relay-path everywhere else.
 4. **Hard rule**: mDNS is unauthenticated on a LAN. It may only ever change *where* the agent connects, never *whether* it trusts what answers — TLS/hostname validation against the redirected IP must stay intact, so a spoofed rogue announcement produces a TLS failure, not a silent MITM.
 

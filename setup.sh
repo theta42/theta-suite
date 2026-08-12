@@ -1387,8 +1387,22 @@ gateway_env_set() {
 		echo "${key}=${value}" | $SUDO tee -a "$file" >/dev/null
 	fi
 }
-gateway_env_set VAULT_TOKEN "${JUMP_VAULT_TOKEN:-}"
+gateway_env_set VAULT_TOKEN "$(env_get JUMP_VAULT_TOKEN)"
 gateway_env_set THETA_MESH_ENDPOINT "${CFG_JUMP_WG_ENDPOINT:-${JUMP_HOST}:${JUMP_WG_PORT:-51820}}"
+# mDNS local-discovery announcer (MULTI_SITE_SPEC.md Appendix B): tell theta-agent
+# on the same LAN which public hostnames this site fronts and what the site slug
+# is, so it can skip the relay. CFG_LOCAL_DISCOVERY_HOSTS overrides; empty means
+# the gateway stays silent (the announcer's default).
+if [[ -n "${CFG_LOCAL_DISCOVERY_HOSTS:-}" ]]; then
+	LOCAL_DISCOVERY_HOSTS="$CFG_LOCAL_DISCOVERY_HOSTS"
+else
+	LOCAL_DISCOVERY_HOSTS=""
+	for h in "${SSO_HOST:-}" "${PROXY_HOST:-}" "${JUMP_HOST:-}"; do
+		[[ -n "$h" ]] && LOCAL_DISCOVERY_HOSTS="${LOCAL_DISCOVERY_HOSTS:+$LOCAL_DISCOVERY_HOSTS,}$h"
+	done
+fi
+gateway_env_set SITE_SLUG "${SITE_SLUG:-local}"
+gateway_env_set THETA_LOCAL_DISCOVERY_HOSTS "$LOCAL_DISCOVERY_HOSTS"
 $SUDO systemctl restart theta-gateway
 
 info "Waiting for theta-gateway to be healthy..."
