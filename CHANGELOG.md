@@ -9,6 +9,27 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [jump-host](https://github.com/theta42/jump-host/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v3.1.1] - 2026-08-12
+
+  jump-host  v3.1.0 -> v3.1.1
+
+- fix: **a fresh host no longer needs Node installed beforehand.** Moving the
+  gateway out of its container moved its runtime requirement onto the host, and
+  v3.1.0 discovered that partway through — after the stack was already up.
+  `jump-host/install.sh` now installs Node 22 from NodeSource on apt hosts
+  (Debian and Ubuntu ship 18, below the engines floor);
+  `THETA_SKIP_NODE_INSTALL=1` opts out.
+- fix: **`setup.sh` checks for Node up front**, next to its docker and git
+  checks, so a missing prerequisite is visible in the first ten seconds rather
+  than ten minutes in.
+- fix: **`sso_secrets_get` stopped hiding a missing runtime.** Both helpers
+  shell out to `node` and swallowed failures, so on a host without it they
+  returned empty — and an empty result is indistinguishable from "that key is
+  unset". A re-run silently lost config values instead of failing. They now say
+  what happened.
+
+---
+
 ## [v3.1.0] - 2026-08-12
 
 **The gateway now runs on the host, not in this compose stack.**
