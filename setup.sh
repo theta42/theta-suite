@@ -143,6 +143,21 @@ else
 	die "docker compose not found. Install Docker Compose (v2 plugin or v1 standalone)."
 fi
 
+# Node on the HOST. Two reasons it has to be here rather than discovered later:
+# the gateway runs on the host now (jump-host/install.sh), and the
+# sso_secrets_get helpers below shell out to node -- and they swallow errors,
+# so without it they return empty and a re-run silently loses config values
+# instead of failing. install.sh can install node from NodeSource, so this is a
+# warning rather than a hard stop; it just should not be a surprise 10 minutes
+# in.
+if ! command -v node >/dev/null 2>&1; then
+	warn "node is not installed on this host. The gateway needs it (>= 20.14) and"
+	warn "so do this script's config helpers. jump-host/install.sh will install it"
+	warn "from NodeSource later; set THETA_SKIP_NODE_INSTALL=1 to manage it yourself."
+elif (( $(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0) < 20 )); then
+	warn "node $(node -v) is older than the required 20.14 — jump-host/install.sh will upgrade it."
+fi
+
 # Is a named container running? (compose-independent check.)
 running() { docker ps --format '{{.Names}}' 2>/dev/null | grep -qx "$1"; }
 
@@ -309,12 +324,22 @@ dn_from_domain() {
 # (ensure_config returns early once sso-secrets.js exists). Reads `stack.<key>`.
 # Prints empty on any failure. Usage: sso_secrets_get ldapBaseDn
 sso_secrets_get() {
+	# An empty result here is indistinguishable from "the key is unset", so a
+	# missing node used to silently blank every value this reads. Say so.
+	if ! command -v node >/dev/null 2>&1; then
+		warn "cannot read $1 from sso-secrets.js: node is not installed on this host"
+		return 0
+	fi
 	node -e 'const c=require(process.argv[1]);const k=process.argv[2];console.log(c&&c.stack&&c.stack[k]!=null?c.stack[k]:"")' \
 		"$PWD/$CONFIG_DIR/sso-secrets.js" "$1" 2>/dev/null || true
 }
 
 # Read a top-level (non-stack) secret from sso-secrets.js, e.g. serviceAccountPass.
 sso_secrets_get_top() {
+	if ! command -v node >/dev/null 2>&1; then
+		warn "cannot read $1 from sso-secrets.js: node is not installed on this host"
+		return 0
+	fi
 	node -e 'const c=require(process.argv[1]);const k=process.argv[2];console.log(c&&c[k]!=null?c[k]:"")' \
 		"$PWD/$CONFIG_DIR/sso-secrets.js" "$1" 2>/dev/null || true
 }
