@@ -215,6 +215,18 @@ services:
     container_name: jump-host
     restart: unless-stopped
     networks: [theta-net]
+    # The gateway builds WireGuard interfaces and routes for the site network
+    # (docs/jump-host/mesh.md), which needs NET_ADMIN; /dev/net/tun is for the
+    # userspace wireguard-go fallback used when the kernel module is absent.
+    #
+    # In a container it can mesh, serve device VPNs and route between sites,
+    # but it cannot act as a full router for the PHYSICAL LAN: NETMAP has no
+    # local network to map and machines on your LAN have no path to it. That
+    # needs the gateway on the host (or its own VM/LXC), which is a separate
+    # piece of work -- until then, LAN integration is unavailable here.
+    cap_add: [NET_ADMIN]
+    devices:
+      - /dev/net/tun:/dev/net/tun
     depends_on:
       sso-manager:
         condition: service_healthy
