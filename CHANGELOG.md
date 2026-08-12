@@ -9,6 +9,23 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [jump-host](https://github.com/theta42/jump-host/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v3.5.1] - 2026-08-12
+
+  sso-manager-node  v2.16.0 -> v2.16.1
+
+- security: **the theta-agent pushes went to every authenticated socket.**
+  `agent.telemetry` (CPU/RAM/disk per host), `agent.discovery` (host inventory:
+  open ports, services) and `agent.response` — **the output of commands run on a
+  host** — were sent with a bare `app.io.emit`, with no read check of any kind.
+  The agent channel can run arbitrary bash, and its results were reaching every
+  logged-in user regardless of whether they may see the host. This is the same
+  defect fixed for model events in v3.3.0, on a channel that was missed because
+  it does not carry model events — and the Directory page consumes two of these
+  on a dedicated socket precisely to bypass the gated one, so the leak had a live
+  consumer. All three now apply the same per-socket check as model events,
+  against the same admin groups the agent REST routes already require, and
+  channels are fail-closed: one with no gate is not delivered at all.
+
 ## [v3.5.0] - 2026-08-12
 
   sso-manager-node  v2.15.0 -> v2.16.0
