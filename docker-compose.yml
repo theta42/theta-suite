@@ -47,6 +47,11 @@ services:
     depends_on:
       - openbao
     networks: [theta-net]
+    # The gateway runs on the host, so reaching it means crossing the container
+    # boundary. `host-gateway` resolves to the docker bridge's host address on
+    # Linux; without it the name does not resolve at all here.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       # SSO web UI. Bind address is configurable via SSO_BIND (default 0.0.0.0 so
       # the UI is reachable on the LAN during setup). Set SSO_BIND=127.0.0.1 to
@@ -83,7 +88,8 @@ services:
       # wired into the compose environment before, so both features were
       # unreachable in every real deployment despite existing in code.
       - PROXY_INTERNAL_URL=http://proxy:3000
-      - JUMP_INTERNAL_URL=http://jump-host:3002
+      # The gateway runs on the host now, not as a compose service.
+      - JUMP_INTERNAL_URL=http://host.docker.internal:3002
       - VAULT_ADDR=http://openbao:8200
       - VAULT_TOKEN=${SSO_VAULT_TOKEN:-}
       # Optional upstream HTTP(S) proxy for outbound calls (SMTP, etc.) at
@@ -145,6 +151,11 @@ services:
     container_name: proxy
     restart: unless-stopped
     networks: [theta-net]
+    # The gateway runs on the host, so reaching it means crossing the container
+    # boundary. `host-gateway` resolves to the docker bridge's host address on
+    # Linux; without it the name does not resolve at all here.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       sso-manager:
         condition: service_healthy
@@ -198,69 +209,17 @@ services:
       retries: 3
       start_period: 30s
 
-  # SSH jump host — a core component, always built + started alongside the
-  # SSO and proxy. Authenticates users against the SSO's OpenLDAP, resolves
-  # reachable hosts from the directory API, and bridges SSH through.
-  jump-host:
-    build:
-      context: ./jump-host
-      dockerfile: Dockerfile
-      args:
-        GIT_COMMIT: ${JUMP_GIT_COMMIT:-}
-        # Optional upstream HTTP(S) proxy for npm/apt during the build. See
-        # the sso-manager service above for details.
-        HTTP_PROXY: ${CFG_HTTP_PROXY:-}
-        HTTPS_PROXY: ${CFG_HTTPS_PROXY:-}
-        NO_PROXY: ${CFG_NO_PROXY:-}
-    container_name: jump-host
-    restart: unless-stopped
-    networks: [theta-net]
-    # The gateway builds WireGuard interfaces and routes for the site network
-    # (docs/jump-host/mesh.md), which needs NET_ADMIN; /dev/net/tun is for the
-    # userspace wireguard-go fallback used when the kernel module is absent.
-    #
-    # In a container it can mesh, serve device VPNs and route between sites,
-    # but it cannot act as a full router for the PHYSICAL LAN: NETMAP has no
-    # local network to map and machines on your LAN have no path to it. That
-    # needs the gateway on the host (or its own VM/LXC), which is a separate
-    # piece of work -- until then, LAN integration is unavailable here.
-    cap_add: [NET_ADMIN]
-    devices:
-      - /dev/net/tun:/dev/net/tun
-    depends_on:
-      sso-manager:
-        condition: service_healthy
-      openbao:
-        condition: service_started
-    ports:
-      - "${JUMP_SSH_PORT:-2222}:2222"   # SSH front door
-      - "${JUMP_WEB_BIND:-0.0.0.0}:${JUMP_WEB_PORT:-3002}:3002"  # web UI/API
-      # The site network's WireGuard port. Without this published, other sites
-      # can never dial this one -- it could only ever reach out, and would be
-      # reachable back only through the hub.
-      - "${JUMP_WG_PORT:-51820}:51820/udp"
-    environment:
-      - NODE_ENV=production
-      # Secrets are loaded by @simpleworkjs/conf from ./config/jump-secrets.js,
-      # then @simpleworkjs/bao-conf deep-merges secret/jump-host/conf from
-      # OpenBao over it at boot. VAULT_TOKEN is the scoped JUMP_VAULT_TOKEN
-      # (policy jump-host — read only secret/jump-host/conf).
-      - VAULT_ADDR=http://openbao:8200
-      - VAULT_TOKEN=${JUMP_VAULT_TOKEN:-}
-      # The host:port other sites dial for WireGuard. This gateway publishes it
-      # to the directory, and every peer builds its Endpoint from it -- so
-      # leaving it unset produces a site nothing can dial, which looks exactly
-      # like a broken tunnel. Defaults to the gateway's own public hostname.
-      - THETA_MESH_ENDPOINT=${CFG_JUMP_WG_ENDPOINT:-${CFG_JUMP_HOST:-}:${JUMP_WG_PORT:-51820}}
-      # Optional upstream HTTP(S) proxy for outbound calls (the directory API
-      # client) at runtime.
-      - HTTP_PROXY=${CFG_HTTP_PROXY:-}
-      - HTTPS_PROXY=${CFG_HTTPS_PROXY:-}
-      - NO_PROXY=${CFG_NO_PROXY:-}
-    volumes:
-      - ./config:/config:ro         # jump-secrets.js (written by ensure_config/bootstrap)
-      - jump-data:/var/lib/jump-host  # generated host keys persist here
-      - jump-redis-data:/data         # Redis (sessions, OAuth state, API tokens) persists here
+  # The SSH jump host / site router is NOT here: it runs on the HOST, installed
+  # by jump-host/install.sh as the theta-gateway systemd service.
+  #
+  # It is a router, and NETMAP of the physical LAN, MASQUERADE out the real
+  # uplink, net.* sysctls in the host namespace, and being the next hop for
+  # your LAN's 10.0.0.0/8 route are all impossible from inside a Docker network
+  # namespace. Running it here meant it could hold tunnels but not route --
+  # and, because the image shipped without iptables, silently could not apply
+  # NAT or exits at all. See docs/jump-host/deployment.md.
+  #
+  # Containers reach it at host.docker.internal:3002 (see extra_hosts above).
 
   # A real, LDAP-joined (SSSD + AuthorizedKeysCommand) downstream host for
   # testing jump-host's actual key-injection -> upstream-connect flow --

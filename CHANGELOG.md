@@ -9,6 +9,69 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [jump-host](https://github.com/theta42/jump-host/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v3.1.0] - 2026-08-12
+
+**The gateway now runs on the host, not in this compose stack.**
+
+It is a router, and NETMAP of the physical LAN, MASQUERADE out the real uplink,
+`net.*` sysctls in the host namespace, and being the next hop for your LAN's
+`10.0.0.0/8` route are all impossible from inside a Docker network namespace.
+
+  jump-host  v3.0.0 -> v3.1.0
+
+### Upgrading
+
+`setup.sh` handles it: it installs `theta-gateway` on this host, copies the
+secrets file to `/etc/theta-gateway/`, fills in the OpenBao token and the
+WireGuard endpoint, and restarts the service. The old `jump-host` container is
+no longer defined — remove it with `docker rm -f jump-host` after upgrading.
+
+Its data moves from docker volumes to `/var/lib/theta-gateway`. A gateway that
+was already meshed keeps working: its WireGuard identity lives in Redis, and
+the installer preserves the data directory precisely because every peer in the
+cluster holds its public half.
+
+### Wiring
+
+The gateway reaches the directory and OpenBao over loopback
+(`127.0.0.1:3001`, `127.0.0.1:8080`). Containers reach the gateway at
+`host.docker.internal:3002`, so `sso-manager` and `proxy` gained
+`extra_hosts: host.docker.internal:host-gateway` and the proxy's Host record
+for the gateway UI points there.
+
+`setup.sh` needs root for this part; it uses `sudo` when not already root.
+
+### theta-gateway v3.1.0 (submodule `jump-host`)
+
+The gateway installs on the **host** now, not in a container.
+
+- feat: **`install.sh` + a systemd unit.** Installs dependencies, lays the app
+  down in `/opt/theta-gateway`, writes `/etc/theta-gateway/gateway.env`, binds
+  Redis to loopback, and enables the `theta-gateway` service. Idempotent, so
+  re-running upgrades in place; `--uninstall` deliberately keeps
+  `/var/lib/theta-gateway`, since that holds this gateway's WireGuard identity
+  and every peer in the cluster has its public half.
+  - Refuses to start if the SSH port collides with the host's own `sshd`,
+    rather than "succeeding" and leaving the operator locked out.
+  - Runs as root: creating WireGuard interfaces, writing the routing table,
+    setting `net.*` sysctls in the init namespace and installing NAT/NETMAP
+    rules all need `CAP_NET_ADMIN` there, and sysctl writes are effectively
+    root-only. A capability-scoped user buys ambiguity, not safety.
+- fix: **the router threw instead of degrading, and it cost the exits.** The
+  container image shipped without `iptables` or `procps`, and `/proc/sys` is
+  read-only in a default container — so every NAT, forwarding and NETMAP call
+  failed. `applyForwarding` was the one unguarded call in `applyPlan`, so it
+  threw mid-reconcile: the NETMAP loop never ran, `applyPlan` never returned,
+  and `applyExits` was never reached. Exits were planned and silently never
+  applied. `net_router` now detects missing tooling once, says what that costs,
+  and configures everything it still can; sysctls fall back to writing
+  `/proc/sys` directly when the binary is absent.
+- The mesh, device tunnels and site-to-site routing always worked in a
+  container. What did not was everything touching the host network — which is
+  most of what a router does.
+
+---
+
 ## [v3.0.0] - 2026-08-12
 
 The site network: every site that joins the directory gets a private network
