@@ -9,6 +9,91 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [jump-host](https://github.com/theta42/jump-host/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v3.2.0] - 2026-08-12
+
+  jump-host  v3.1.3 -> v3.1.4
+  sso-manager-node  v2.12.0 -> v2.13.0
+  theta-agent  v2.4.0 -> v2.5.0
+
+- fix: **the host gateway's LDAP and OIDC config pointed at Docker service
+  names that no longer resolve.** The gateway runs on the host now, but
+  `bootstrap.js` wrote `ldaps://sso-manager:636` /
+  `http://sso-manager:3001` (and OIDC token/userinfo endpoints) into
+  `jump-secrets.js` — every SSH login and the web SSO login rejected because
+  `getUser()`/`checkPassword()` never reached slapd. It now writes loopback
+  URLs (`ldaps://127.0.0.1:636`, `http://127.0.0.1:3001`), matching how
+  `install.sh` reaches the stack. **Existing installs must regenerate
+  `jump-secrets.js`** (`jumpFileComplete()` keeps the old file).
+- fix: **no-inbound relay registration dialed a removed compose service.**
+  `site-relay-register.js` used `http://jump-host:3002`, which doesn't exist
+  since the gateway left the compose stack — `CFG_SPOKE_NO_INBOUND` could
+  never register a relay. It now uses `JUMP_INTERNAL_URL` (or
+  `http://host.docker.internal:3002`).
+- fix: **the Multi-Site modal's gateway-mesh count 404'd.** It called the
+  deleted `GET /api/mesh/gateways`; the count is now computed locally from the
+  `MeshSite` roster (sso-manager-node v2.13.0). Also dropped the stale
+  `integrations/theta-jump` OpenBao token instructions from `setup.env.example`.
+- fix: **mesh API authz tightened** (sso-manager-node v2.13.0): `PUT /api/mesh/self`
+  and `GET /api/mesh/peers` + `/site-clients` are admin-gated, and `/roster`
+  scrubs WireGuard keys/endpoints for non-admins — a low-privilege user can no
+  longer clobber a site's network identity or enumerate the whole mesh.
+- fix: **the gateway's Redis config is actually loaded now** (jump-host v3.1.4)
+  — a systemd drop-in points `redis-server` at the loopback config, so the
+  WireGuard identity/sessions persist to `/var/lib/theta-gateway/redis`.
+- fix: **gateway reconcile is serialized and exit rules are diffed**
+  (jump-host v3.1.4) — no more overlapping-pass races stacking duplicate
+  `ip rule`s, no 60-second exit-routing blip, and operator rules in the
+  priority range are left alone.
+- fix: **re-running the theta-agent installer with a new join key no longer
+  drops it** (theta-agent v2.5.0), and the **Linux tray companion ships for
+  the first time** (release workflow now builds `theta-agent-tray-linux-*`).
+- docs: rewrote the container-era mesh sections in `MULTI_SITE_SPEC.md`,
+  `architecture.md`, `README.md`, and jump-host's `DEPLOYMENT.md` /
+  `docs/installation.md` for the roster-driven host-installed gateway.
+
+---
+
+## [v3.1.3] - 2026-08-12
+
+  jump-host  v3.1.2 -> v3.1.3
+
+- fix: **the host gateway's `VAULT_TOKEN` was always empty.** `setup.sh`
+  minted `JUMP_VAULT_TOKEN` into `./.env` via `ensure_token` but never
+  exported it, so the gateway env got `VAULT_TOKEN=` and never read
+  `secret/jump-host/conf` from OpenBao, booting from the file-loaded fallback
+  instead. It now reads the token back out of `./.env` and writes it into
+  `/etc/theta-gateway/gateway.env`.
+- fix: **the mDNS local-discovery announcer was inert in any stock
+  deployment.** `THETA_LOCAL_DISCOVERY_HOSTS` and `SITE_SLUG` were never set,
+  so the gateway's `mdns_announce` logged "nothing to announce, skipping".
+  `setup.sh` now sets both in the gateway env — defaulting to this site's SSO,
+  proxy and jump hostnames, with `CFG_LOCAL_DISCOVERY_HOSTS` to override or
+  set empty to disable — so LAN-local theta-agents can skip the relay.
+- fix: **upgrading a live gateway no longer fails its port check.**
+  (jump-host v3.1.3) `install.sh`'s `ss -lntp` conflict check could not tell
+  the gateway's own SSH front door from an unrelated process; it now only
+  fails when somebody other than the active `theta-gateway` service owns the
+  port.
+
+---
+
+## [v3.1.2] - 2026-08-12
+
+  jump-host  v3.1.1 -> v3.1.2
+
+- fix: **exit routing rules read back in the form they were added.** The kernel
+  drops the prefix on a host rule — one added as `from 10.2.128.1/32` prints as
+  `from 10.2.128.1` — so comparing installed rules against intended ones showed
+  a mismatch that was not real.
+- test: **the three-site end-to-end suite now checks that exits are APPLIED,
+  not planned.** Its exit assertions read the planner's output, which is why
+  they passed while the exit configuration was never reached at all. They now
+  read the live WireGuard device and the kernel's own routing rules, and wait
+  for the exit tunnel to complete a handshake under its separate key — the
+  thing that was genuinely broken when both interfaces shared one identity.
+
+---
+
 ## [v3.1.1] - 2026-08-12
 
   jump-host  v3.1.0 -> v3.1.1

@@ -78,8 +78,10 @@ Theta Suite 2.0 is a production-grade **composition repository**: it composes ap
                  `ldap-test-host` fixture (opt-in: `--profile ldap-test`).
 ```
 
-All four services bundle their **own Redis** (sso-manager, proxy, jump-host
-each run a 127.0.0.1:6379 instance) and share the `openbao` secrets store.
+sso-manager and proxy each bundle their **own Redis** (a 127.0.0.1:6379
+instance per container); the gateway uses the host's Redis service (bound to
+loopback by `install.sh`, data at `/var/lib/theta-gateway/redis`). All share
+the `openbao` secrets store.
 Direct LDAP binds against `:636` are first-class — that's how Linux hosts do
 PAM/SSSD login, sudo, and SSH-key serving, and how LDAP-native apps
 authenticate — not a fallback path.
@@ -94,7 +96,7 @@ authenticate — not a fallback path.
 | `3000` | proxy | localhost/LAN | proxy mgmt UI/API (fronted by 443 normally) |
 | `3001` | sso-manager | localhost/LAN | SSO web UI (fronted by the proxy normally) |
 | `636` | sso-manager | **yes** | LDAPS for direct-LDAP clients (Linux hosts, LDAP-native apps) |
-| `389` | sso-manager | **no** | plain LDAP — internal only (app↔slapd over localhost) |
+| `389` | sso-manager | **yes** | plain LDAP — needed by the stack's OWN host enrollment (setup.sh / ldap-client configure sssd against ldap://localhost); bind to 127.0.0.1 via `LDAP_BIND` if you don't want it on the LAN |
 | `2222` | jump-host | **yes** | SSH front door |
 | `3002` | jump-host | **yes** | jump-host web UI/API |
 | `8080` | openbao | yes | OpenBao UI/API for the operator (apps use `openbao:8200` internally) |
@@ -176,36 +178,43 @@ policies and the `sso-broker` token role, mints the per-app scoped tokens into
    already holds a `clientId`+`clientSecret` matching an existing client, they
    are kept; if the client exists but the file has no usable secret, the
    secret is rotated and written back.
-6. **Build + start the proxy + jump-host**, wait for `/health`. Each
-   entrypoint points `CONF_SECRETS` at its `./config/*-secrets.js`, then
-   `@simpleworkjs/bao-conf` overlays the OpenBao path over it (the OAuth
-   clientSecret + LDAP bind creds come from OpenBao at runtime).
-7. **Register `<SSO_HOST>` and `<PROXY_HOST>` as Host records in the proxy** —
-   `setup.sh` runs a short script inside the proxy container that calls its
-   Host model directly (`Host.create({host, ip, targetPort, ...})`), rather
-   than the proxy's own HTTP API, since no authenticated session exists yet at
-   this point in the run. The proxy routes every hostname purely off a Host
-   record (`ops/nginx_conf/proxy.conf` has no default/self route), so without
-   this step neither URL resolves to anything. `<SSO_HOST>` targets
-   `sso-manager:3001` (the Docker service), `<PROXY_HOST>` targets
-   `127.0.0.1:3000` (the proxy's own management app, same container). Both
-   are created with `sso_enabled: false` — each app already gates its own
-   login, and SSO-gating the SSO's own login page would be circular. Skips a
-   host that already exists, so re-running `setup.sh` is a no-op here.
+ 6. **Build + start the proxy**, wait for `/health`. Its entrypoint points
+    `CONF_SECRETS` at `./config/proxy-secrets.js`, then `@simpleworkjs/bao-conf`
+    overlays the OpenBao path over it (the OAuth clientSecret + LDAP bind creds
+    come from OpenBao at runtime).
+ 7. **Install + start the gateway on the host** — `setup.sh` copies
+    `./config/jump-secrets.js` to `/etc/theta-gateway/jump-secrets.js` and runs
+    `jump-host/install.sh` (systemd `theta-gateway.service`, run as root because
+    it is a router). The gateway reads `CONF_SECRETS=/etc/theta-gateway/jump-secrets.js`
+    plus `VAULT_TOKEN` from `/etc/theta-gateway/gateway.env`, and reaches the
+    stack over loopback (`http://127.0.0.1:3001`, `ldaps://127.0.0.1:636`).
+ 8. **Register `<SSO_HOST>` and `<PROXY_HOST>` as Host records in the proxy** —
+    `setup.sh` runs a short script inside the proxy container that calls its
+    Host model directly (`Host.create({host, ip, targetPort, ...})`), rather
+    than the proxy's own HTTP API, since no authenticated session exists yet at
+    this point in the run. The proxy routes every hostname purely off a Host
+    record (`ops/nginx_conf/proxy.conf` has no default/self route), so without
+    this step neither URL resolves to anything. `<SSO_HOST>` targets
+    `sso-manager:3001` (the Docker service), `<PROXY_HOST>` targets
+    `127.0.0.1:3000` (the proxy's own management app, same container). Both
+    are created with `sso_enabled: false` — each app already gates its own
+    login, and SSO-gating the SSO's own login page would be circular. Skips a
+    host that already exists, so re-running `setup.sh` is a no-op here.
 
 `setup.sh` then prints the first-admin login + the public URLs.
 
 ### How config reaches the apps
 
 Config and secrets live in two layers: an operator-edited
-`./config/*-secrets.js` file (gitignored, bind-mounted) and the OpenBao
-overlay over it. Each entrypoint points the `CONF_SECRETS` env var
-(`@simpleworkjs/conf` >= 1.2.0) at its file early, before the app starts:
+`./config/*-secrets.js` file (gitignored, bind-mounted or copied to the host)
+and the OpenBao overlay over it. Each entrypoint points the `CONF_SECRETS`
+env var (`@simpleworkjs/conf` >= 1.2.0) at its file early, before the app
+starts:
 
 ```
-CONF_SECRETS=/config/sso-secrets.js    (sso-manager, ./config RW)
-CONF_SECRETS=/config/proxy-secrets.js  (proxy, ./config RO)
-CONF_SECRETS=/config/jump-secrets.js   (jump-host, ./config RO)
+CONF_SECRETS=/config/sso-secrets.js      (sso-manager, ./config RW)
+CONF_SECRETS=/config/proxy-secrets.js    (proxy, ./config RO)
+CONF_SECRETS=/etc/theta-gateway/jump-secrets.js  (gateway, host install)
 ```
 
 `@simpleworkjs/conf` loads `conf/base.js → <env>.js → secrets file → app_*
@@ -251,9 +260,12 @@ compose down`, or after restoring from backup.
 `./setup.sh` auto-snapshots `./config/` + LDAP + all the Redis instances to
 `./backups/<timestamp>/` before each rebuild (keeps the last `BACKUP_KEEP`,
 default 5). State lives on named volumes (`ldap-data`, `ldap-certs`,
-`sso-data`, `proxy-data`, `proxy-cache`, `proxy-logs`, `jump-data`,
-`jump-redis-data`, `openbao-data`) and survives recreation; `down -v` wipes
-them. Redis is persisted with AOF + RDB on those volumes. For the full
+`sso-data`, `proxy-data`, `proxy-cache`, `proxy-logs`, `openbao-data`) and
+survives recreation; `down -v` wipes them. Redis is persisted with AOF + RDB
+on those volumes. The gateway no longer has containers: it runs on the host
+as the `theta-gateway` systemd service, and its WireGuard identity/sessions
+live in the host Redis at `/var/lib/theta-gateway/redis` (see
+`docs/jump-host/deployment.md`) — back that up separately. For the full
 manual-backup + restore runbook (full / Redis-only / LDAP-only, with the
 AOF-vs-RDB note), see the *Backups and restore* section of the
 [README](https://github.com/theta42/theta-suite#backups-and-restore). OpenBao

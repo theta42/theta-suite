@@ -1197,6 +1197,14 @@ SSO_HOST="$(cfgval SSO_HOST)"
 PROXY_HOST="$(cfgval PROXY_HOST)"
 ADMIN_UID="$(cfgval ADMIN_UID)"
 
+# CFG_SSO_HOST is only ever assigned inside ensure_config, which returns early
+# once ./config/sso-secrets.js exists -- so on a RE-RUN it is unset, and the
+# five places below that still reference it died on `set -u` with "unbound
+# variable" partway through an otherwise-fine run. SSO_HOST is read from the
+# live config every time, so fall back to it (and then to the secrets file)
+# rather than making each caller remember.
+CFG_SSO_HOST="${CFG_SSO_HOST:-${SSO_HOST:-$(sso_secrets_get ssoHost)}}"
+
 info "Stack config:"
 info "  SSO host:      https://${SSO_HOST}"
 info "  Proxy host:    https://${PROXY_HOST}"
@@ -1360,7 +1368,11 @@ info "Installing theta-gateway on this host..."
 $SUDO mkdir -p "$GATEWAY_CONFIG_DIR"
 $SUDO install -m 0600 ./config/jump-secrets.js "$GATEWAY_CONFIG_DIR/jump-secrets.js"
 
-if ! JUMP_SSH_PORT="${JUMP_SSH_PORT:-2222}" $SUDO -E ./jump-host/install.sh; then
+# `env` rather than sudo's -E: $SUDO is EMPTY when already root, so `$SUDO -E`
+# left a bare `-E` as the command. `env VAR=... cmd` works identically with and
+# without sudo in front of it, and passes the variable explicitly rather than
+# relying on sudo preserving the environment.
+if ! $SUDO env JUMP_SSH_PORT="${JUMP_SSH_PORT:-2222}" ./jump-host/install.sh; then
 	die "theta-gateway install failed — see: journalctl -u theta-gateway -n 50"
 fi
 
@@ -1375,8 +1387,22 @@ gateway_env_set() {
 		echo "${key}=${value}" | $SUDO tee -a "$file" >/dev/null
 	fi
 }
-gateway_env_set VAULT_TOKEN "${JUMP_VAULT_TOKEN:-}"
+gateway_env_set VAULT_TOKEN "$(env_get JUMP_VAULT_TOKEN)"
 gateway_env_set THETA_MESH_ENDPOINT "${CFG_JUMP_WG_ENDPOINT:-${JUMP_HOST}:${JUMP_WG_PORT:-51820}}"
+# mDNS local-discovery announcer (MULTI_SITE_SPEC.md Appendix B): tell theta-agent
+# on the same LAN which public hostnames this site fronts and what the site slug
+# is, so it can skip the relay. CFG_LOCAL_DISCOVERY_HOSTS overrides; empty means
+# the gateway stays silent (the announcer's default).
+if [[ -n "${CFG_LOCAL_DISCOVERY_HOSTS:-}" ]]; then
+	LOCAL_DISCOVERY_HOSTS="$CFG_LOCAL_DISCOVERY_HOSTS"
+else
+	LOCAL_DISCOVERY_HOSTS=""
+	for h in "${SSO_HOST:-}" "${PROXY_HOST:-}" "${JUMP_HOST:-}"; do
+		[[ -n "$h" ]] && LOCAL_DISCOVERY_HOSTS="${LOCAL_DISCOVERY_HOSTS:+$LOCAL_DISCOVERY_HOSTS,}$h"
+	done
+fi
+gateway_env_set SITE_SLUG "${SITE_SLUG:-local}"
+gateway_env_set THETA_LOCAL_DISCOVERY_HOSTS "$LOCAL_DISCOVERY_HOSTS"
 $SUDO systemctl restart theta-gateway
 
 info "Waiting for theta-gateway to be healthy..."
