@@ -9,6 +9,47 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [jump-host](https://github.com/theta42/jump-host/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v3.8.0] - 2026-08-12
+
+  jump-host  v3.1.6 -> v3.2.0
+  proxy  v2.2.0 -> v2.3.0
+  sso-manager-node  v2.18.0 -> v2.19.0
+  theta-agent  v2.5.0 -> v2.5.1
+
+**Notifications across the suite**, and the last of the live-update rollout.
+
+Every model event you are allowed to see is a notification. That is the whole
+design: a notification system's hard problem is "who should see this", and the
+socket read gate already answers it — live, per row, every time an event goes
+out. So there is no recipient resolution and no fan-out table. A notification is
+an event that reached you, and history is those same events replayed through the
+same gate. Clicking one opens the record that changed.
+
+History stores the **shape** only — model, action, pk, actor, owner, timestamp —
+never the payload, so it does not become a second copy of your data retaining a
+deleted record's contents after it is gone. Unread is one watermark per user
+rather than a read flag per item, so opening the bell on one device clears the
+badge on all of them. A later compliance/audit trail extends this rather than
+replaces it: what it adds is before/after values and immutability, not a
+different shape.
+
+Collapsing is not cosmetic. Creating one directory resource emits eleven events
+— the resource, its groups, its edges — and a discovery sweep emits hundreds.
+The feed says "11 resource groups added"; history keeps every row.
+
+- **jump-host** pushed nothing over its socket before; it was attached only so
+  the shared front-end kept working. Everything there arrives *with* its read
+  gate rather than after one. Its event stream is the SSH audit trail — who
+  connected to which host, announced on the attempt and again when the session
+  ends and its success and byte counts are known.
+- **theta-agent v2.5.1** brings the suite's pin back onto the mainline. The
+  agent repo's history was rewritten to prune its size, and the previous pin
+  (v2.5.0) survived only via its tag, off the rewritten `master`.
+- The notification client now ships in `@simpleworkjs/frontend` 0.4.0 rather
+  than a copy in each app; each app supplies only which page a given kind of
+  notification opens. `@simpleworkjs/backend` 0.3.0 carries the server half, so
+  a framework-native app gets the feed with no code of its own.
+
 ## [v3.7.0] - 2026-08-12
 
   proxy  v2.1.1 -> v2.2.0
