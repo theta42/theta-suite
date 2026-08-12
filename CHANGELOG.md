@@ -9,6 +9,23 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [jump-host](https://github.com/theta42/jump-host/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v3.1.2] - 2026-08-12
+
+  jump-host  v3.1.1 -> v3.1.2
+
+- fix: **exit routing rules read back in the form they were added.** The kernel
+  drops the prefix on a host rule — one added as `from 10.2.128.1/32` prints as
+  `from 10.2.128.1` — so comparing installed rules against intended ones showed
+  a mismatch that was not real.
+- test: **the three-site end-to-end suite now checks that exits are APPLIED,
+  not planned.** Its exit assertions read the planner's output, which is why
+  they passed while the exit configuration was never reached at all. They now
+  read the live WireGuard device and the kernel's own routing rules, and wait
+  for the exit tunnel to complete a handshake under its separate key — the
+  thing that was genuinely broken when both interfaces shared one identity.
+
+---
+
 ## [v3.1.1] - 2026-08-12
 
   jump-host  v3.1.0 -> v3.1.1
