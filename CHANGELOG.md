@@ -9,6 +9,43 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [jump-host](https://github.com/theta42/jump-host/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v3.4.0] - 2026-08-12
+
+  sso-manager-node  v2.14.0 -> v2.15.0
+
+**The Directory updates itself now too.** v3.3.0 secured this app's socket
+bridge and left it carrying nothing; this wires it up. Two more reasons nothing
+auto-updated, both in sso-manager-node:
+
+- fix: **the socket never connected at all.** `authIO` called
+  `Auth.checkToken(tok)` with a bare string where `{token}` is expected, then
+  called `token.getUser()` — but `checkToken` returns the User itself and has no
+  such method. Every handshake failed with `token.getUser is not a function`, so
+  no client in this app has ever had a working socket.
+- fix: **nothing published.** `@simpleworkjs/orm` has a `pubsub` hook that emits
+  `model:<Name>:<action>` on save/delete, and it was never wired. It is now,
+  through a filter that forwards only models carrying a socket read gate — the
+  ORM publishes for everything it loads, and that includes `AuthToken`,
+  `OtpToken` and `PasswordResetToken`, written on every login and password
+  reset.
+- feat: the Directory and Discovery Plugins views update themselves. A resource
+  added, renamed or removed by another admin, or by a discovery plugin run, now
+  appears without a refresh. The Directory table is derived (hierarchy from the
+  edge list, agent status from another service, indentation recomputed on
+  render), so a change re-derives the view rather than patching one row — which
+  would leave a new child at the wrong depth with no caret on its parent. The
+  operator's search/sort/secrets filter survives the reload.
+- security: `READERS` is the single source of truth for what goes live: a model
+  listed there both publishes and is authorized there, so the two cannot drift.
+  `Resource`, `ResourceGroup` and `PluginInstance` are gated to the same admin
+  groups that guard their REST routes, resolved transitively from LDAP and
+  cached briefly per socket. Verified with two sockets side by side: a directory
+  admin receives the events, an ordinary user receives nothing.
+
+jump-host is unchanged and stays at v3.1.5: it has one `jq-repeat` list (a
+user's own API tokens), no pubsub controller, and attaches socket.io only to
+serve the client library — there is nothing there worth a publisher and gate.
+
 ## [v3.3.0] - 2026-08-12
 
   jump-host  v3.1.4 -> v3.1.5
