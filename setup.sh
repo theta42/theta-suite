@@ -1197,6 +1197,14 @@ SSO_HOST="$(cfgval SSO_HOST)"
 PROXY_HOST="$(cfgval PROXY_HOST)"
 ADMIN_UID="$(cfgval ADMIN_UID)"
 
+# CFG_SSO_HOST is only ever assigned inside ensure_config, which returns early
+# once ./config/sso-secrets.js exists -- so on a RE-RUN it is unset, and the
+# five places below that still reference it died on `set -u` with "unbound
+# variable" partway through an otherwise-fine run. SSO_HOST is read from the
+# live config every time, so fall back to it (and then to the secrets file)
+# rather than making each caller remember.
+CFG_SSO_HOST="${CFG_SSO_HOST:-${SSO_HOST:-$(sso_secrets_get ssoHost)}}"
+
 info "Stack config:"
 info "  SSO host:      https://${SSO_HOST}"
 info "  Proxy host:    https://${PROXY_HOST}"
