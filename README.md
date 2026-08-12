@@ -5,7 +5,7 @@ Theta Suite 2.0 is your production-grade, single-command solution for replacing 
 Theta Suite composes core applications around a shared [OpenBao](https://openbao.org/) secrets store, brought up with a single `./setup.sh`:
 
 - **[Theta Directory](https://github.com/theta42/sso-manager-node)** — an OIDC provider with a built-in OpenLDAP directory, resource catalog, IAM group access controls, and administrative web console.
-- **[Theta Gateway](https://github.com/theta42/jump-host)** — directory-driven SSH access gateway and integrated WireGuard mesh network router with site-aware target filtering and NETMAP shadow subnets.
+- **[Theta Gateway](https://github.com/theta42/jump-host)** — directory-driven SSH access gateway and site router: WireGuard site-to-site mesh, per-user device VPN, per-device internet exits, and NETMAP shadow subnets. Installs on the host (not in the compose stack) because it is a router.
 - **[Theta Agent](https://github.com/theta42/theta-agent)** — lightweight multi-platform host telemetry and desktop control agent for Linux (amd64, arm64, armv7), macOS (Intel, Apple Silicon), and Windows.
 - **[Theta Proxy](https://github.com/theta42/proxy)** — an OIDC-protected reverse proxy (OpenResty) that puts web applications behind directory authentication with direct LDAP user lookups.
 - **[ldap-client](https://github.com/theta42/ldap-client)** — enrolls Linux hosts into the directory for PAM/SSSD login, sudo, and SSH keys.
@@ -271,9 +271,15 @@ for details.
 ## Logs
 
 The stack runs under Docker Compose with several services — `sso-manager`,
-`proxy`, `jump-host`, and `openbao` (plus its `bao-renewer` sidecar). Both the
-Node app and, for the SSO, OpenLDAP write to the container's stdout/stderr, so
+`proxy` and `openbao` (plus its `bao-renewer` sidecar). Both the Node app and,
+for the SSO, OpenLDAP write to the container's stdout/stderr, so
 `docker compose logs` is the primary view.
+
+The **gateway is the exception**: it runs on the host as the `theta-gateway`
+systemd service, because it is a router and the LAN-facing half of that cannot
+work inside a Docker network namespace. Its logs are in the journal
+(`journalctl -u theta-gateway`). See
+[Where the gateway runs](docs/jump-host/deployment.md).
 
 ```bash
 # Follow all services live

@@ -86,23 +86,67 @@ In-kernel WireGuard works inside LXC (WireGuard is namespace-aware; the host
 loads the module, the container creates interfaces), so you get the kernel
 datapath rather than the `wireguard-go` fallback.
 
-## Current state
+## Installing it
 
-**The host installer is not built yet.** Until it is, the gateway still ships in
-`docker-compose.yml` with `NET_ADMIN` and `/dev/net/tun`, where it can mesh and
-serve device VPNs but **cannot** act as a router for your physical LAN.
+`theta-suite`'s `setup.sh` does this for you. To do it by hand, or to upgrade:
 
-So today:
+```
+sudo ./jump-host/install.sh
+```
 
-| Capability | Container (now) | Host (planned) |
-|---|---|---|
-| Site-to-site mesh | yes | yes |
-| Device VPN (laptops, phones) | yes | yes |
-| Internet exits | yes | yes |
-| NETMAP of the physical LAN | **no** | yes |
-| LAN machines reaching the mesh | **no** | yes |
-| Port forwarding | **no** | planned |
+It installs `redis-server`, `iproute2`, `iptables`, `wireguard-tools` and
+`procps` if missing, lays the app down in `/opt/theta-gateway`, writes
+`/etc/theta-gateway/gateway.env`, binds Redis to loopback, and enables the
+`theta-gateway` systemd service. Re-running upgrades in place; config and data
+are left alone.
 
-If you only need agent- and client-based access, the container is fine. If you
-want the machines on your LAN to reach other sites without installing anything
-on them, that needs the host install.
+| Path | What |
+|---|---|
+| `/opt/theta-gateway` | the application (replaced wholesale on upgrade) |
+| `/etc/theta-gateway/gateway.env` | settings — written once, never overwritten |
+| `/etc/theta-gateway/jump-secrets.js` | LDAP bind, API token, OIDC (from `setup.sh`) |
+| `/var/lib/theta-gateway` | SSH host keys and Redis data |
+
+```
+systemctl status theta-gateway
+journalctl -u theta-gateway -f
+sudo ./jump-host/install.sh --uninstall
+```
+
+`--uninstall` deliberately **keeps** `/var/lib/theta-gateway`, because that is
+where this gateway's WireGuard identity lives and every peer in the cluster
+holds its public half. Deleting it silently breaks every tunnel to this site.
+
+It runs as **root**. It creates WireGuard interfaces, writes the routing table,
+sets `net.*` sysctls in the host namespace and installs NAT and NETMAP rules —
+all of which need `CAP_NET_ADMIN` in the init namespace, where sysctl writes
+are effectively root-only. A capability-scoped user would buy ambiguity rather
+than safety.
+
+### Two things to get right
+
+**The SSH port.** The gateway's front door defaults to 2222 so it does not
+collide with the host's own `sshd` on 22. The installer refuses to proceed if
+the port is already in use, rather than "succeeding" and leaving you unable to
+reach the box.
+
+**Reaching the rest of the stack.** The directory and OpenBao run as containers
+on the same host and publish their ports, so the gateway talks to them over
+loopback — `127.0.0.1:3001` and `127.0.0.1:8080` — rather than by service name.
+In the other direction, containers reach the gateway at
+`host.docker.internal:3002`, which is why `sso-manager` and `proxy` carry an
+`extra_hosts: host.docker.internal:host-gateway` entry.
+
+## What running it in a container actually cost
+
+Worth recording, because the failure was quiet. The gateway image shipped
+without `iptables` or `procps`, and `/proc/sys` is read-only in a default
+container. So a containerised gateway could hold tunnels and route between
+sites, but **every NAT, forwarding and NETMAP call failed** — and because the
+forwarding call was not guarded, it threw mid-reconcile and the exit
+configuration after it never ran at all. Exits were planned and silently never
+applied.
+
+Both are fixed (the router degrades and reports a limitation instead of
+throwing), but the shape of the bug is the argument: a router in a namespace
+fails in ways that look like a healthy mesh.

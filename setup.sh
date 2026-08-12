@@ -72,6 +72,11 @@ warn()  { printf '\033[1;33m[setup]\033[0m %s\n' "$*" >&2; }
 error() { printf '\033[1;31m[setup]\033[0m %s\n' "$*" >&2; }
 die()   { error "$*"; exit 1; }
 
+# The gateway installs on the host (systemd, /opt, host networking), so parts of
+# this script need root even though the rest only needs docker. Empty when
+# already root, so the same commands work either way.
+if [[ $EUID -eq 0 ]]; then SUDO=""; else SUDO="sudo"; fi
+
 # ── Flags ──────────────────────────────────────────────────────────────────────
 # --reset-openbao: wipe the OpenBao volume + bao-init.json and re-initialize a
 # fresh store (no prod data to preserve). Use when OpenBao state is suspect
@@ -219,7 +224,7 @@ export CFG_CREATE_ALL_HTTP
 # whole stack.
 export CFG_HTTP_PROXY="${CFG_HTTP_PROXY:-}"
 export CFG_HTTPS_PROXY="${CFG_HTTPS_PROXY:-${CFG_HTTP_PROXY:-}}"
-export CFG_NO_PROXY="${CFG_NO_PROXY:-localhost,127.0.0.1,sso-manager,proxy,jump-host}"
+export CFG_NO_PROXY="${CFG_NO_PROXY:-localhost,127.0.0.1,sso-manager,proxy,host.docker.internal}"
 if [[ -n "$CFG_HTTP_PROXY" ]]; then
 	info "Using HTTP proxy for docker build + containers: $CFG_HTTP_PROXY"
 fi
@@ -1320,15 +1325,41 @@ env_upsert JUMP_GIT_COMMIT "$JUMP_GIT_COMMIT"
 # writes this to OpenBao directly, so this is a fallback for when bootstrap's
 # jump provisioning warned-but-continued.
 seed_app_conf jump-host/conf /config/jump-secrets.js
-info "Building + starting jump-host..."
-"${COMPOSE[@]}" up -d --build jump-host
 
-info "Waiting for jump-host to be healthy..."
-for i in $(seq 1 60); do
-	if docker exec jump-host node -e "require('http').get('http://localhost:3002/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))" >/dev/null 2>&1; then
-		info "jump-host is healthy."; break
+# The gateway installs on the HOST, not as a compose service: it is a router,
+# and NETMAP of the physical LAN, MASQUERADE out the real uplink, and being the
+# next hop for the LAN's 10.0.0.0/8 route cannot be done from inside a Docker
+# network namespace. See docs/jump-host/deployment.md.
+GATEWAY_CONFIG_DIR=/etc/theta-gateway
+info "Installing theta-gateway on this host..."
+$SUDO mkdir -p "$GATEWAY_CONFIG_DIR"
+$SUDO install -m 0600 ./config/jump-secrets.js "$GATEWAY_CONFIG_DIR/jump-secrets.js"
+
+if ! JUMP_SSH_PORT="${JUMP_SSH_PORT:-2222}" $SUDO -E ./jump-host/install.sh; then
+	die "theta-gateway install failed — see: journalctl -u theta-gateway -n 50"
+fi
+
+# Settings the installer cannot know: the scoped OpenBao token, and the
+# host:port other sites dial for WireGuard. Written after the env file exists
+# so a re-run updates them without clobbering operator edits elsewhere.
+gateway_env_set() {
+	local key="$1" value="$2" file="$GATEWAY_CONFIG_DIR/gateway.env"
+	if $SUDO grep -q "^${key}=" "$file" 2>/dev/null; then
+		$SUDO sed -i "s|^${key}=.*|${key}=${value}|" "$file"
+	else
+		echo "${key}=${value}" | $SUDO tee -a "$file" >/dev/null
 	fi
-	if (( i == 60 )); then warn "jump-host did not become healthy in 120s. Check: ${COMPOSE[*]} logs jump-host"; break; fi
+}
+gateway_env_set VAULT_TOKEN "${JUMP_VAULT_TOKEN:-}"
+gateway_env_set THETA_MESH_ENDPOINT "${CFG_JUMP_WG_ENDPOINT:-${JUMP_HOST}:${JUMP_WG_PORT:-51820}}"
+$SUDO systemctl restart theta-gateway
+
+info "Waiting for theta-gateway to be healthy..."
+for i in $(seq 1 60); do
+	if curl -fsS --max-time 2 http://127.0.0.1:3002/health >/dev/null 2>&1; then
+		info "theta-gateway is healthy."; break
+	fi
+	if (( i == 60 )); then warn "theta-gateway did not become healthy in 120s. Check: journalctl -u theta-gateway -n 50"; break; fi
 	sleep 2
 done
 
@@ -1340,8 +1371,8 @@ const {Host} = require('/app/models').models;
 		try { await Host.get($(js_str "$JUMP_HOST")); console.log('SKIP ${JUMP_HOST} (already exists)'); }
 		catch (e) {
 			if (e.name !== 'EntryNotFound') throw e;
-			await Host.create({ host: $(js_str "$JUMP_HOST"), ip: 'jump-host', targetPort: 3002, forcessl: $( [[ "${CFG_CREATE_ALL_HTTP:-0}" == "1" ]] && echo false || echo true ), targetssl: false, sso_enabled: false, created_by: 'setup.sh' });
-			console.log('CREATED ${JUMP_HOST} -> jump-host:3002');
+			await Host.create({ host: $(js_str "$JUMP_HOST"), ip: 'host.docker.internal', targetPort: 3002, forcessl: $( [[ "${CFG_CREATE_ALL_HTTP:-0}" == "1" ]] && echo false || echo true ), targetssl: false, sso_enabled: false, created_by: 'setup.sh' });
+			console.log('CREATED ${JUMP_HOST} -> host.docker.internal:3002');
 		}
 		process.exit(0);
 	} catch (error) { console.error('ERROR', error.message); process.exit(1); }

@@ -151,10 +151,10 @@ permission to send internet traffic, not a route into someone's network.
 
 ## Where the gateway runs
 
-On the host — not in the compose stack like everything else, because it is a
-router and the LAN-facing half of that cannot work from inside a Docker network
-namespace. [Where the gateway runs](deployment.html) covers the reasoning and
-what is currently limited while it still ships as a container.
+On the host, as the `theta-gateway` systemd service — not in the compose stack
+like everything else, because it is a router and the LAN-facing half of that
+cannot work from inside a Docker network namespace.
+[Where the gateway runs](deployment.html) covers the install and the reasoning.
 
 ## What the gateway needs
 
