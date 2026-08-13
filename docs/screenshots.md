@@ -51,7 +51,7 @@ node -e "console.log(require('./config/jump-secrets.js').auth.localAdminPass)"
 ```
 
 Log in at `http://localhost:<port>/login` for each app — plain HTTP on the
-mapped port, no cert/cookie issues at all. Ports come from `setup.env`
+mapped port, no cert/cookie issues at all. Ports come from `master.env`
 (operator-configurable) — check it rather than assuming defaults; e.g. this
 deployment maps the Proxy UI to `3010` (`MGMT_PORT`), not the usual `3000`.
 

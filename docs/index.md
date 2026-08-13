@@ -89,7 +89,7 @@ The SSO Manager and the proxy it fronts, both stood up by one `./setup.sh` run:
 ```bash
 git clone --recursive https://github.com/theta42/theta-suite.git
 cd theta-suite
-cp setup.env.example setup.env     # then edit setup.env: set CFG_DOMAIN to your domain
+cp master.env.example master.env     # then edit master.env: set CFG_DOMAIN to your domain
 ./setup.sh
 ```
 
