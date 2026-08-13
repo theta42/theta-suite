@@ -10,6 +10,27 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [theta-agent](https://github.com/theta42/theta-agent/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v3.18.0] - 2026-08-13
+
+- **`setup.sh` runs two independent slow steps in parallel instead of
+  serializing them.**
+  - The three submodule updates (`sso-manager-node`, `proxy`, `jump-host`)
+    each fetch tags and check out the latest release concurrently — three
+    independent `.git` directories with no shared state, previously three
+    sequential network round-trips.
+  - `sso-manager` and `proxy`'s Docker images now build together
+    (`docker compose build sso-manager proxy`, which compose already
+    parallelizes) before either container starts, instead of building
+    proxy's image only after sso-manager had already been built, started,
+    health-checked, and bootstrapped. Proxy's real compose-level
+    `depends_on: sso-manager: condition: service_healthy` (its own boot
+    process reaches sso-manager) is untouched — only the *build* step,
+    which needs neither container running, moved earlier. Caught and fixed
+    a bug this surfaced along the way: `PROXY_GIT_COMMIT` (a build arg) used
+    to be resolved right before proxy's old build step, which would have
+    been too late once that build moved earlier — now resolved alongside
+    `SSO_GIT_COMMIT`, before the combined build call.
+
 ## [v3.17.2] - 2026-08-13
 
 - **theta-agent [v2.8.1](https://github.com/theta42/theta-agent/releases/tag/v2.8.1)** —

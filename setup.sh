@@ -46,7 +46,10 @@
 #   3. backup_before_rebuild: snapshot ./config + LDAP (slapcat) + both Redis
 #      (BGSAVE + dump.rdb) to ./backups/<ts>/ before the rebuild. No-op on the
 #      very first run. Keeps the last BACKUP_KEEP (default 5).
-#   4. docker compose up -d --build sso-manager; wait for /health.
+#   4. docker compose build sso-manager proxy (both images concurrently —
+#      proxy's build has no runtime dependency on sso-manager, only its
+#      compose-level `depends_on: service_healthy` does, which step 6
+#      still honors); docker compose up -d sso-manager; wait for /health.
 #   5. docker compose exec sso-manager node /bootstrap/bootstrap.js
 #      -> creates/updates the LDAP service account, first admin, OAuth client;
 #         writes the OAuth client creds into ./config/proxy-secrets.js; prints
@@ -55,7 +58,7 @@
 #         SSO Manager + Proxy services, with the proxy's OAuth client linked
 #         under its service) so the Directory page is populated out of the
 #         box. Idempotent — existing slugs are operator-owned and left alone.
-#   6. docker compose up -d --build proxy; wait for /health.
+#   6. docker compose up -d proxy (already built in step 4); wait for /health.
 #   7. Register <SSO_HOST> and <PROXY_HOST> as Host records in the proxy (via
 #      `docker compose exec proxy node`, calling the proxy's Host model
 #      directly) so the proxy actually routes those hostnames somewhere —
@@ -296,8 +299,17 @@ if [[ "${SKIP_SUBMODULE_UPDATE:-0}" != "1" ]]; then
 	# jump-host is a core component — always tracked + built.
 	SUBMODULES=(sso-manager-node proxy jump-host)
 	info "Updating submodules to their latest release tag (${SUBMODULES[*]})..."
-	for sm in "${SUBMODULES[@]}"; do
-		[[ -d "$sm" ]] || continue
+
+	# Each submodule is its own .git directory with no shared state with the
+	# others, so fetch+checkout runs concurrently instead of three sequential
+	# network round-trips. Each background job's combined output is captured
+	# to its own file (writing directly to the shared stdout from parallel
+	# jobs would interleave mid-line) and printed in a fixed order after
+	# `wait`, so the log reads the same as the old sequential loop.
+	sm_update_one() {
+		local sm="$1"
+		[[ -d "$sm" ]] || return 0
+		local before_rev before_tag latest_tag after_rev
 		before_rev="$(git -C "$sm" rev-parse HEAD 2>/dev/null || true)"
 		# Prefer the exact tag the submodule is currently pinned to; fall back
 		# to a short commit hash if it's on an untagged commit (shouldn't
@@ -306,18 +318,18 @@ if [[ "${SKIP_SUBMODULE_UPDATE:-0}" != "1" ]]; then
 
 		if ! git -C "$sm" fetch --tags -q 2>&1; then
 			warn "  ${sm}: could not fetch tags (offline?) — staying on ${before_tag}."
-			continue
+			return 0
 		fi
 
 		latest_tag="$(git -C "$sm" tag --list 'v*' --sort=-v:refname | head -n1)"
 		if [[ -z "$latest_tag" ]]; then
 			warn "  ${sm}: no vX.Y.Z release tags found — staying on ${before_tag}."
-			continue
+			return 0
 		fi
 
 		if ! git -C "$sm" checkout -q "$latest_tag" 2>&1; then
 			warn "  ${sm}: could not check out ${latest_tag} — staying on ${before_tag}."
-			continue
+			return 0
 		fi
 
 		after_rev="$(git -C "$sm" rev-parse HEAD 2>/dev/null || true)"
@@ -326,7 +338,17 @@ if [[ "${SKIP_SUBMODULE_UPDATE:-0}" != "1" ]]; then
 		else
 			info "  ${sm}: already up to date (${latest_tag})"
 		fi
+	}
+
+	SM_TMPDIR="$(mktemp -d)"
+	for sm in "${SUBMODULES[@]}"; do
+		( sm_update_one "$sm" ) > "$SM_TMPDIR/$sm.log" 2>&1 &
 	done
+	wait
+	for sm in "${SUBMODULES[@]}"; do
+		[[ -f "$SM_TMPDIR/$sm.log" ]] && cat "$SM_TMPDIR/$sm.log"
+	done
+	rm -rf "$SM_TMPDIR"
 else
 	info "Skipping submodule update (SKIP_SUBMODULE_UPDATE=1)."
 fi
@@ -1156,6 +1178,12 @@ info "Starting bao-renewer (service-token renewal sidecar)..."
 SSO_GIT_COMMIT="$(git -C sso-manager-node rev-parse --short HEAD 2>/dev/null || echo unknown)"
 export SSO_GIT_COMMIT
 env_upsert SSO_GIT_COMMIT "$SSO_GIT_COMMIT"
+# PROXY_GIT_COMMIT resolved here too (not down by proxy's own start step,
+# further below) -- it has to be set before the combined sso-manager+proxy
+# build call right below, or proxy's image build reads it as unset/"unknown".
+PROXY_GIT_COMMIT="$(git -C proxy rev-parse --short HEAD 2>/dev/null || echo unknown)"
+export PROXY_GIT_COMMIT
+env_upsert PROXY_GIT_COMMIT "$PROXY_GIT_COMMIT"
 # OpenLDAP multi-master replication (docs/replication.md, auto-configured --
 # see step 7e below and bootstrap/site-ldap-register.js): pick up whatever
 # LDAP_SERVER_ID/LDAP_REPLICATION_HOSTS a PRIOR run already computed, so a
@@ -1203,8 +1231,20 @@ else
 	warn "Could not resolve the pinned theta-agent version; skipping the Windows installer fetch (install.sh is still staged)."
 fi
 
-info "Building + starting sso-manager (first run builds the image; this takes a while)..."
-"${COMPOSE[@]}" up -d --build sso-manager
+# Build both images concurrently before starting either. compose v2 already
+# parallelizes a multi-service `build` (BuildKit workers, not a sequential
+# per-service loop) -- the old code built sso-manager, then waited for it to
+# start + become healthy + bootstrap, and only THEN started building proxy's
+# image, serializing two independent builds behind an unrelated runtime
+# dependency. Proxy's compose-level `depends_on: sso-manager: condition:
+# service_healthy` is real (proxy's own boot reaches sso-manager) and stays
+# sequential below -- only the BUILD step, which needs neither container
+# running, moves earlier.
+info "Building sso-manager + proxy images (first run; this takes a while)..."
+"${COMPOSE[@]}" build sso-manager proxy
+
+info "Starting sso-manager..."
+"${COMPOSE[@]}" up -d sso-manager
 
 info "Waiting for sso-manager to be healthy..."
 for i in $(seq 1 60); do
@@ -1349,12 +1389,14 @@ else
 fi
 
 # ── 6. Start the proxy, wait for health ───────────────────────────────────────
-# PROXY_GIT_COMMIT: same reasoning as SSO_GIT_COMMIT above.
-PROXY_GIT_COMMIT="$(git -C proxy rev-parse --short HEAD 2>/dev/null || echo unknown)"
-export PROXY_GIT_COMMIT
-env_upsert PROXY_GIT_COMMIT "$PROXY_GIT_COMMIT"
-info "Building + starting proxy (first run builds the image; this takes a while)..."
-"${COMPOSE[@]}" up -d --build proxy
+# PROXY_GIT_COMMIT was already resolved + exported above, before the combined
+# build step -- it has to be, since that's when docker actually reads it as a
+# build arg; setting it here would be too late for an image built earlier.
+# Already built above (in parallel with sso-manager); this only starts it,
+# now that its `depends_on: sso-manager: condition: service_healthy` is
+# actually satisfied.
+info "Starting proxy..."
+"${COMPOSE[@]}" up -d proxy
 
 info "Waiting for proxy to be healthy..."
 for i in $(seq 1 60); do
