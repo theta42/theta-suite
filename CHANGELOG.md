@@ -9,6 +9,18 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [jump-host](https://github.com/theta42/jump-host/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v3.9.1] - 2026-08-13
+
+- **proxy [v2.3.2](https://github.com/theta42/proxy/releases/tag/v2.3.2)** —
+  fix: the error log filled with an OCSP stapling error on every TLS handshake.
+  Let's Encrypt has wound OCSP down, so the certificates it issues carry no OCSP
+  responder URI and auto-ssl's lookup cannot succeed for any of them — ever.
+  auto-ssl logs that at `ngx.ERR` by default, once per handshake per host, and
+  says "continuing anyway" because the handshake is genuinely fine. The flood is
+  the damage: a real error is buried under thousands of copies of a benign one,
+  which is exactly what happened while debugging an unrelated routing fault.
+  Logged at `ngx.WARN` now.
+
 ## [v3.9.0] - 2026-08-12
 
 Submodule roll-up: the notification bell broke the nav bar in all three apps.
