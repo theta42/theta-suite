@@ -64,8 +64,30 @@ mDNS is **unauthenticated** on a local network — anyone on the same LAN segmen
 - TLS certificate validation and hostname verification against the redirected IP must remain fully enforced — no exceptions, no "local network so it's fine" carve-out.
 - A spoofed rogue announcement pointing a hostname at an attacker's local IP should produce a TLS handshake failure (cert won't match), not a silent connection. If your chosen mechanism has *any* code path where local-discovery bypasses or weakens cert checking, that's a bug, not an optimization — fix it before shipping.
 
+## Fresh/Unenrolled Agent Discovery (implemented: `theta-agent discover`, `theta-agent/install.sh`)
+
+A separate, lower-risk use of the same announcement: an agent with **no
+existing trust relationship** to protect can safely use mDNS to find
+candidate sites at enrollment time, since there's nothing for a spoofed
+announcement to compromise — the worst case is a bogus *option* an admin
+could pick, same risk class as a fake WiFi SSID, not a silent trust switch.
+
+- `theta-agent discover [--timeout <duration>] [--urls-only|--json]` browses
+  `_theta-suite._tcp` for the given window (default 3s) and prints every
+  distinct site seen (`site`, `directoryHost`→`url`, `version`). Purely
+  read-only — never writes `agent.yml`, never picked automatically by the
+  agent daemon itself.
+- `install.sh` calls it (`--urls-only`) when `--join-key` is given without
+  `--url`: exactly one candidate found → used automatically; zero or more
+  than one → the operator is told to pass `--url` explicitly. Never guesses
+  between multiple candidates.
+- `--token` enrollment (a specific, already-issued credential) still requires
+  `--url` explicitly — there's no "the one site on the LAN" fallback that
+  makes sense for a credential already scoped to one server.
+
 ## Out of Scope for This Piece
 
+- **Roaming for an already-enrolled agent** (detecting a *different* site's announcement and switching which directory a currently-trusted agent talks to). Deliberately not built: mDNS is unauthenticated, and unlike the fresh-agent case above, an enrolled agent auto-switching directories would mean acting on unauthenticated network broadcast to change who it takes signed commands from — a materially bigger blast radius than the existing "only ever redirects a hostname I already trust" behavior. If this is wanted later, the right shape is the agent asking its *currently*-trusted directory (over the authenticated channel it already has) whether a newly-announced site is a real member of its cluster, and only switching on a yes from there — not a decision to make from mDNS alone.
 - The announcer side's exact library/implementation on the gateway/proxy (Linux — can be built where this spec was authored, not blocked on Windows/Mac).
 - Anything about the master-relay mechanism itself (§5.2 of the parent spec) — this doc is purely the "skip the relay when local" optimization layered on top of it.
 

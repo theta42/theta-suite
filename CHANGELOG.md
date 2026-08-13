@@ -10,6 +10,19 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [theta-agent](https://github.com/theta42/theta-agent/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v3.15.0] - 2026-08-13
+
+- **theta-agent [v2.8.0](https://github.com/theta42/theta-agent/releases/tag/v2.8.0)** —
+  `theta-agent discover` lists theta-suite sites announced on the local
+  network (site slug, directory URL, version) — read-only, never acted on by
+  the agent itself. `install.sh` now auto-fills `--url` from it when
+  `--join-key` is given without one, but only when exactly one site is
+  found on the LAN; ambiguity or nothing found still requires the operator
+  to be explicit. Deliberately scoped to a fresh, unenrolled agent only —
+  see `docs/AGENT_LOCAL_DISCOVERY_SPEC.md` for why "roaming" (an
+  already-enrolled agent auto-switching directories) is a separate, harder
+  problem left unbuilt.
+
 ## [v3.14.0] - 2026-08-13
 
 - **jump-host [v3.3.0](https://github.com/theta42/jump-host/releases/tag/v3.3.0)**
