@@ -10,6 +10,16 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [theta-agent](https://github.com/theta42/theta-agent/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v3.12.1] - 2026-08-13
+
+- **theta-agent [v2.6.1](https://github.com/theta42/theta-agent/releases/tag/v2.6.1)** —
+  fix: a host's reported IP could be a Docker/Podman bridge address instead
+  of its real LAN IP. `net.InterfaceAddrs()` mixed every interface together
+  with no filtering, so `docker0`/`br-*`/`veth*`/`podman0`/etc. bridge
+  addresses could land at `ip_addresses[0]` — which the Directory takes as
+  the host's address. Interfaces matching known container/VM bridge prefixes
+  are now skipped when collecting IPs.
+
 ## [v3.12.0] - 2026-08-13
 
 - **theta-directory [v2.20.0](https://github.com/theta42/theta-directory/releases/tag/v2.20.0)** —
