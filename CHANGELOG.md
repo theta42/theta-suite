@@ -9,6 +9,23 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [jump-host](https://github.com/theta42/jump-host/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v3.9.0] - 2026-08-12
+
+Submodule roll-up: the notification bell broke the nav bar in all three apps.
+
+- **proxy [v2.3.1](https://github.com/theta42/proxy/releases/tag/v2.3.1)** —
+  fix: the container holding username / bell / Log Out is `.form-inline`, a
+  Bootstrap 4 class Bootstrap 5 removed. It laid out as a row only because every
+  child happened to be an inline element; the bell has to be a
+  `<div class="dropdown">` (Bootstrap requires it), so it forced a line break
+  and pushed Log Out onto a third row. Replaced with `d-flex align-items-center`,
+  which is how Bootstrap 5 makes a row and does not depend on what the children
+  are.
+- **theta-directory [v2.19.1](https://github.com/theta42/theta-directory/releases/tag/v2.19.1)** —
+  fix: same nav-bar break, same cause; all three shells carry identical markup.
+- **jump-host [v3.2.1](https://github.com/theta42/jump-host/releases/tag/v3.2.1)** —
+  fix: same nav-bar break, same cause.
+
 ## [v3.8.1] - 2026-08-12
 
 - fix: **the jump host's web UI 502'd on every clean install.** setup.sh
