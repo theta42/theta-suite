@@ -135,7 +135,7 @@ Beyond app config, OpenBao holds:
   external app can read its own secrets over the OpenBao HTTP API.
 
 `setup.sh` creates the policies + a `sso-broker` token role and mints the
-per-app tokens on first run; the root token stays in `setup.env` for
+per-app tokens on first run; the root token stays in `master.env` for
 seeding/maintenance only and is never passed to a service container. Full
 details — the policy model, the `secret/apps/<app>/conf` convention, `curl`
 + Node examples, and the operator rotation procedure — are in
@@ -154,7 +154,7 @@ inputs from the bind-mounted `./config/sso-secrets.js` + `./config/proxy-secrets
 
 OpenBao comes up first: `setup.sh` initializes and unseals it, writes the
 policies and the `sso-broker` token role, mints the per-app scoped tokens into
-`setup.env`, and idempotently seeds `secret/sso-manager/conf`,
+`master.env`, and idempotently seeds `secret/sso-manager/conf`,
 `secret/proxy/conf`, and `secret/jump-host/conf` from the corresponding
 `./config/*-secrets.js` files. The app containers then start with their scoped
 `VAULT_TOKEN`. The SSO/LDAP/OIDC wiring that follows:

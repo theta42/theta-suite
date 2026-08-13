@@ -3,9 +3,15 @@
 # theta-suite setup — one-command bring-up of the unified SSO Manager + Proxy stack.
 #
 #   git clone --recursive <theta-suite> && cd theta-suite
-#   cp setup.env.example setup.env   # set CFG_DOMAIN to your domain (once)
-#   ./setup.sh            # first run: generates ./config/ from setup.env, builds + bootstraps + starts
+#   cp master.env.example master.env   # fresh/standalone site: set CFG_DOMAIN
+#   # -- OR, to join an existing site's directory instead --
+#   cp spoke.env.example spoke.env     # set CFG_MASTER_DIRECTORY_URL/_JOIN_KEY
+#   ./setup.sh            # first run: generates ./config/ from master.env/spoke.env, builds + bootstraps + starts
 #   ./setup.sh            # later runs: rebuilds + bootstraps + starts (config left untouched)
+#
+# Exactly one of master.env / spoke.env must exist -- a site is either a fresh
+# master or a spoke joining one, never both, never neither. See "Bring-up
+# mode" below.
 #
 # Idempotent: safe to re-run. It pulls its own latest version, updates the two
 # submodules, manages config in a bind-mounted ./config/ directory
@@ -28,14 +34,15 @@
 #      (so each run builds the newest sso-manager-node + proxy). Skip with
 #      SKIP_SUBMODULE_UPDATE=1.
 #   2. ensure_config: create ./config/sso-secrets.js + proxy-secrets.js if
-#      missing. On a fresh clone the domain/hosts are read from ./setup.env
+#      missing. On a fresh clone the domain/hosts are read from ./master.env
 #      (the one place the domain is entered, as a plain DNS domain — the LDAP
-#      base DN is derived from it) and both files are generated with that
-#      domain filled in everywhere + random secrets, then the run proceeds to
-#      build (no edit-and-re-run step). On
-#      an existing deployment with .env/proxy.env, the secrets are migrated
-#      (preserved) into ./config. If ./config already exists it is left
-#      untouched (the operator owns it; setup.env is ignored).
+#      base DN is derived from it) OR, for a spoke, fetched automatically from
+#      the master using ./spoke.env's join key — see "Bring-up mode" below.
+#      Both files are generated with that domain filled in everywhere +
+#      random secrets, then the run proceeds to build (no edit-and-re-run
+#      step). On an existing deployment with .env/proxy.env, the secrets are
+#      migrated (preserved) into ./config. If ./config already exists it is
+#      left untouched (the operator owns it; master.env/spoke.env are ignored).
 #   3. backup_before_rebuild: snapshot ./config + LDAP (slapcat) + both Redis
 #      (BGSAVE + dump.rdb) to ./backups/<ts>/ before the rebuild. No-op on the
 #      very first run. Keeps the last BACKUP_KEEP (default 5).
@@ -213,30 +220,57 @@ then
 	fi
 fi
 
+# ── Bring-up mode: exactly one of master.env / spoke.env ───────────────────────
+# A site is either a fresh/standalone master (master.env) or a spoke joining an
+# existing one (spoke.env) — never both, never neither. This used to be one
+# setup.env file with spoke.env optionally layered on top, which meant a spoke
+# had to separately know and correctly re-type the master's own CFG_DOMAIN
+# (the shared LDAP base DN) into setup.env, on top of the join key spoke.env
+# already carries — easy to get wrong, and the failure only surfaced after a
+# full local bootstrap (MULTI_SITE_SPEC.md §4). Now spoke.env alone is
+# sufficient: CFG_DOMAIN is fetched from the master automatically, in
+# ensure_config below.
+#
+# One-time migration: a deployment from before this split has a file literally
+# named setup.env. Treat it as master.env transparently. (This whole check
+# only matters on a first-run bring-up anyway — ensure_config returns early
+# once ./config/sso-secrets.js exists — so an already-running site never
+# reaches the die() below regardless of what its file is named.)
+if [[ -f ./setup.env && ! -f ./master.env && ! -f ./spoke.env ]]; then
+	mv ./setup.env ./master.env
+	info "Migrated ./setup.env -> ./master.env (setup.env is now split into master.env vs. spoke.env — see master.env.example)."
+fi
+
+HAVE_MASTER_ENV=0; [[ -f ./master.env ]] && HAVE_MASTER_ENV=1
+HAVE_SPOKE_ENV=0;  [[ -f ./spoke.env ]]  && HAVE_SPOKE_ENV=1
+if (( HAVE_MASTER_ENV && HAVE_SPOKE_ENV )); then
+	die "Both ./master.env and ./spoke.env exist. A site is either a fresh master (master.env) or a spoke joining one (spoke.env) — never both. Remove whichever doesn't apply."
+elif (( ! HAVE_MASTER_ENV && ! HAVE_SPOKE_ENV )); then
+	die "No config found. First run: 'cp master.env.example master.env' (fresh/standalone site) OR 'cp spoke.env.example spoke.env' (join an existing site's directory), edit it, then re-run ./setup.sh."
+fi
+IS_SPOKE=$HAVE_SPOKE_ENV
+
 # ── Jump host hostname (always installed) ─────────────────────────────────────
 # The SSH jump host is a core component — always built + started (no longer
 # gated by CFG_JUMP_HOST_ENABLED). Read its optional hostname override from
-# ./setup.env now (before the submodule loop and the compose steps) so the
-# later steps can use it. The authoritative CFG_* for secrets are still
+# master.env/spoke.env now (before the submodule loop and the compose steps)
+# so the later steps can use it. The authoritative CFG_* for secrets are still
 # resolved in ensure_config; this is only the hostname override.
-[[ -f ./setup.env ]] && parse_kv_file ./setup.env
-# spoke.env (optional, see spoke.env.example): the join-a-cluster vars split
-# out of setup.env for clarity, layered on top so its values win over any
-# same-named ones in setup.env. Same first-run-only rule as setup.env below.
+[[ -f ./master.env ]] && parse_kv_file ./master.env
 [[ -f ./spoke.env ]] && parse_kv_file ./spoke.env
 export CFG_JUMP_HOST
 CFG_CREATE_ALL_HTTP="${CFG_CREATE_ALL_HTTP:-0}"
 export CFG_CREATE_ALL_HTTP
 
 # ── Optional outbound HTTP(S) proxy for docker build + the running containers ─
-# CFG_HTTP_PROXY / CFG_HTTPS_PROXY / CFG_NO_PROXY (from ./setup.env or the
-# environment) — NOT the theta42 "proxy" app; this is an upstream HTTP proxy
-# for reaching the internet (npm/apt during image builds, and SMTP/ACME/DNS
-# provider calls at runtime), useful on isolated/offline/corporate-network
-# test hosts. Off by default. docker-compose.yml passes these through as both
-# build args (Docker also recognizes them as predefined build ARGs) and
-# container environment on every service, so one setup.env entry covers the
-# whole stack.
+# CFG_HTTP_PROXY / CFG_HTTPS_PROXY / CFG_NO_PROXY (from master.env/spoke.env
+# or the environment) — NOT the theta42 "proxy" app; this is an upstream HTTP
+# proxy for reaching the internet (npm/apt during image builds, and
+# SMTP/ACME/DNS provider calls at runtime), useful on isolated/offline/
+# corporate-network test hosts. Off by default. docker-compose.yml passes
+# these through as both build args (Docker also recognizes them as predefined
+# build ARGs) and container environment on every service, so one config
+# entry covers the whole stack.
 export CFG_HTTP_PROXY="${CFG_HTTP_PROXY:-}"
 export CFG_HTTPS_PROXY="${CFG_HTTPS_PROXY:-${CFG_HTTP_PROXY:-}}"
 export CFG_NO_PROXY="${CFG_NO_PROXY:-localhost,127.0.0.1,sso-manager,proxy,host.docker.internal}"
@@ -305,13 +339,13 @@ fi
 # ── 2. ensure_config ──────────────────────────────────────────────────────────
 # Derive a DNS domain from a base DN (dc=foo,dc=bar -> foo.bar). Only used to
 # read domain back out of a base DN set directly (advanced override, or an
-# old setup.env / migrated .env) — the normal path is dn_from_domain below.
+# old master.env / migrated .env) — the normal path is dn_from_domain below.
 domain_from_dn() {
 	echo "$1" | sed 's/^dc=//; s/,dc=/./g'
 }
 
 # Derive an LDAP base DN from a DNS domain (foo.bar -> dc=foo,dc=bar). This is
-# the normal path: operators enter a plain domain in setup.env (CFG_DOMAIN),
+# the normal path: operators enter a plain domain in master.env (CFG_DOMAIN),
 # and the base DN is built from it, however many labels it has (a DuckDNS
 # domain like foo.duckdns.org becomes dc=foo,dc=duckdns,dc=org — LDAP doesn't
 # care how many dc= components there are).
@@ -490,26 +524,29 @@ BAOEOF
 		return 0
 	fi
 
-	# First run: read the domain/hosts from ./setup.env — the ONE place the
+	# First run: read the domain/hosts from ./master.env — the ONE place the
 	# domain is entered (e.g. 718it.biz), as a plain DNS domain; the LDAP base
 	# DN is derived from it (dc=718it,dc=biz). Hostnames default to
-	# sso.<domain> / proxy.<domain>, also derived from it. setup.env is
-	# used ONLY on first run; once ./config/*.js exist they are operator-owned
-	# and setup.env is ignored. Falls back to legacy .env/proxy.env migration
-	# below for existing deployments.
-	if [[ -f ./setup.env ]]; then
-		info "Reading domain/hosts from ./setup.env ..."
-		parse_kv_file ./setup.env
+	# sso.<domain> / proxy.<domain>, also derived from it. A spoke instead gets
+	# CFG_DOMAIN fetched from the master below (see the master-fetch block) —
+	# ./spoke.env never sets it directly. Both files are read ONLY on first
+	# run; once ./config/*.js exist they are operator-owned and both are
+	# ignored. Falls back to legacy .env/proxy.env migration below for
+	# existing deployments.
+	if [[ -f ./master.env ]]; then
+		info "Reading domain/hosts from ./master.env ..."
+		parse_kv_file ./master.env
 	fi
 	if [[ -f ./spoke.env ]]; then
 		info "Reading multi-site join config from ./spoke.env ..."
 		parse_kv_file ./spoke.env
 	fi
 
-	# Bind the CFG_* vars to empty where setup.env / the environment didn't set
-	# them, so the .env migration's `${LDAP_X:-$CFG_X}` defaults below don't trip
-	# `set -u`. Real values come from setup.env, the .env migration, or the
-	# derivation block further down (no example.com placeholders here).
+	# Bind the CFG_* vars to empty where master.env/spoke.env / the environment
+	# didn't set them, so the .env migration's `${LDAP_X:-$CFG_X}` defaults
+	# below don't trip `set -u`. Real values come from master.env/spoke.env,
+	# the .env migration, or the derivation block further down (no
+	# example.com placeholders here).
 	CFG_BASE_DN="${CFG_BASE_DN:-}"
 	CFG_DOMAIN="${CFG_DOMAIN:-}"
 	CFG_SITE_NAME="${CFG_SITE_NAME:-}"
@@ -549,7 +586,7 @@ BAOEOF
 		CFG_ADMIN_PASS="${BOOTSTRAP_ADMIN_PASS:-$CFG_ADMIN_PASS}"
 		CFG_SVC_PASS="${LDAP_SERVICE_PASS:-$CFG_SVC_PASS}"
 		CFG_LDAP_CERT_CN="${LDAP_CERT_CN:-$CFG_LDAP_CERT_CN}"
-		# .env has no legacy LDAPS_HOST key; this stays as set in setup.env/env.
+		# .env has no legacy LDAPS_HOST key; this stays as set in master.env/env.
 		CFG_LDAPS_HOST="${CFG_LDAPS_HOST:-}"
 		CFG_SMTP_HOST="${SMTP_HOST:-${CFG_SMTP_HOST:-}}"
 		CFG_SMTP_PORT="${SMTP_PORT:-${CFG_SMTP_PORT:-}}"
@@ -569,14 +606,43 @@ BAOEOF
 		migrated=1
 	fi
 
-	# Derive everything from the domain — the one value operators enter. No
-	# example.com defaults: a blank domain means first-run setup hasn't been
-	# done yet. CFG_BASE_DN can still be set directly (setup.env or a migrated
-	# .env) to override the derived DN or to read the domain back out of an
-	# old-style DN-first setup.env; if not, it's built from CFG_DOMAIN.
+	# Spoke: CFG_DOMAIN/CFG_BASE_DN are never set directly (spoke.env.example
+	# doesn't offer them) -- fetch the master's LDAP base DN using the join key
+	# we were handed instead. This is what makes spoke.env self-sufficient: the
+	# operator no longer has to separately learn and correctly re-type the
+	# master's own domain, and a bad/unreachable join key now fails here, in
+	# the first second, instead of after a full local bootstrap (builds,
+	# generated secrets, OpenBao init, ...) only to hit a base-DN mismatch at
+	# the very last step.
+	if (( IS_SPOKE )) && [[ -z "$CFG_DOMAIN" && -z "$CFG_BASE_DN" ]]; then
+		[[ -n "${CFG_MASTER_DIRECTORY_URL:-}" && -n "${CFG_MASTER_DIRECTORY_JOIN_KEY:-}" ]] \
+			|| die "spoke.env must set CFG_MASTER_DIRECTORY_URL and CFG_MASTER_DIRECTORY_JOIN_KEY (mint a key on the master: Directory -> the Master Site modal -> Site Join Keys -> Mint key)."
+		info "Fetching this cluster's LDAP domain from the master (${CFG_MASTER_DIRECTORY_URL})..."
+		MASTER_PING="$(curl -fsS -m 15 -X POST "${CFG_MASTER_DIRECTORY_URL%/}/api/site/ping" \
+			-H "Authorization: Bearer ${CFG_MASTER_DIRECTORY_JOIN_KEY}" -H 'Content-Type: application/json' -d '{}' 2>/dev/null)" \
+			|| die "Could not reach the master (${CFG_MASTER_DIRECTORY_URL}) to fetch its LDAP domain -- check CFG_MASTER_DIRECTORY_URL/CFG_MASTER_DIRECTORY_JOIN_KEY in spoke.env and that the master is reachable."
+		# `|| true`: under pipefail, grep finding no match makes the whole
+		# pipeline's exit status non-zero even though this is a plain
+		# assignment -- which would trip `set -e` right here, silently, before
+		# the explicit empty-check below ever gets to die() with a real
+		# message.
+		MASTER_BASE_DN="$(printf '%s' "$MASTER_PING" | grep -o '"baseDn"[[:space:]]*:[[:space:]]*"[^"]*"' | sed -E 's/.*:[[:space:]]*"([^"]*)".*/\1/' || true)"
+		[[ -n "$MASTER_BASE_DN" ]] \
+			|| die "The master responded but did not report a baseDn -- it may be running a theta-suite older than the release that added it to POST /api/site/ping. Update the master, or set CFG_DOMAIN in spoke.env manually as a workaround."
+		CFG_BASE_DN="$MASTER_BASE_DN"
+		CFG_DOMAIN="$(domain_from_dn "$MASTER_BASE_DN")"
+		info "Cluster LDAP domain: ${CFG_DOMAIN} (base DN: ${CFG_BASE_DN})"
+	fi
+
+	# Derive everything from the domain — the one value operators enter (or, for
+	# a spoke, the value just fetched above). No example.com defaults: a blank
+	# domain means first-run setup hasn't been done yet. CFG_BASE_DN can still
+	# be set directly (master.env or a migrated .env) to override the derived
+	# DN or to read the domain back out of an old-style DN-first setup.env; if
+	# not, it's built from CFG_DOMAIN.
 	CFG_DOMAIN="${CFG_DOMAIN:-$([[ -n "$CFG_BASE_DN" ]] && domain_from_dn "$CFG_BASE_DN" || true)}"
 	[[ -n "$CFG_DOMAIN" ]] \
-		|| die "First run: 'cp setup.env.example setup.env', set CFG_DOMAIN to your domain (e.g. example.com), then re-run ./setup.sh"
+		|| die "First run: 'cp master.env.example master.env', set CFG_DOMAIN to your domain (e.g. example.com), then re-run ./setup.sh"
 	CFG_BASE_DN="${CFG_BASE_DN:-$(dn_from_domain "$CFG_DOMAIN")}"
 	# CFG_PUBLIC_DOMAIN (MULTI_SITE_SPEC.md §4): an inbound spoke's own public
 	# web domain, independent of CFG_DOMAIN. CFG_DOMAIN is the LDAP identity
@@ -605,7 +671,7 @@ BAOEOF
 	CFG_CLIENT_ID="${CFG_CLIENT_ID:-}"
 	CFG_CLIENT_SECRET="${CFG_CLIENT_SECRET:-}"
 	# Random secrets (generated fresh unless sourced/migrated above). These do
-	# NOT belong in setup.env — they're written into ./config/*.js only.
+	# NOT belong in master.env/spoke.env — they're written into ./config/*.js only.
 	CFG_LDAP_ADMIN_PASS="${CFG_LDAP_ADMIN_PASS:-$(rand_hex 16)}"
 	CFG_JWT_SECRET="${CFG_JWT_SECRET:-$(rand_hex 32)}"
 	CFG_ADMIN_PASS="${CFG_ADMIN_PASS:-$(rand_hex 16)}"
@@ -622,7 +688,7 @@ BAOEOF
 		info "Migrated secrets into $CONFIG_DIR/ (existing LDAP dir / JWT / OAuth client preserved)."
 		info "You may now delete .env and proxy.env — they are no longer used."
 	else
-		info "Generated $CONFIG_DIR/sso-secrets.js + proxy-secrets.js from ./setup.env (domain=$CFG_DOMAIN)."
+		info "Generated $CONFIG_DIR/sso-secrets.js + proxy-secrets.js (domain=$CFG_DOMAIN)."
 		info "Edit $CONFIG_DIR/*.js to change secrets later; re-run ./setup.sh to rebuild."
 	fi
 }
@@ -1097,7 +1163,7 @@ env_upsert SSO_GIT_COMMIT "$SSO_GIT_COMMIT"
 # all). A truly fresh install has no file yet -- that's fine, it just starts
 # standalone until step 7e computes and applies real values. Skipped under
 # CFG_LDAP_MMR_MANUAL=true so a manually hand-set LDAP_SERVER_ID/
-# LDAP_REPLICATION_HOSTS in setup.env isn't clobbered by a stale auto file.
+# LDAP_REPLICATION_HOSTS in master.env/spoke.env isn't clobbered by a stale auto file.
 [[ "${CFG_LDAP_MMR_MANUAL:-false}" != "true" && -f "$CONFIG_DIR/ldap-replication.env" ]] && parse_kv_file "$CONFIG_DIR/ldap-replication.env"
 
 # Stage the theta-agent install resources the Directory serves from
@@ -1263,9 +1329,9 @@ else
 fi
 
 # ── 5b. Multi-site: join an existing master directory (first-run only) ────────
-# setup.env: CFG_MASTER_DIRECTORY_URL + CFG_MASTER_DIRECTORY_JOIN_KEY (mint a
+# spoke.env: CFG_MASTER_DIRECTORY_URL + CFG_MASTER_DIRECTORY_JOIN_KEY (mint a
 # site join key on the master). Only honored on a first-run bring-up: ensure_config
-# reads setup.env once and ignores it once ./config/ exists, so an already-running
+# reads spoke.env once and ignores it once ./config/ exists, so an already-running
 # directory can never be merged into a master's. Idempotent — a node that already
 # joined reports "already a spoke" and setup continues.
 if [[ -n "${CFG_MASTER_DIRECTORY_URL:-}" && -n "${CFG_MASTER_DIRECTORY_JOIN_KEY:-}" ]]; then
@@ -1391,8 +1457,10 @@ gateway_env_set VAULT_TOKEN "$(env_get JUMP_VAULT_TOKEN)"
 gateway_env_set THETA_MESH_ENDPOINT "${CFG_JUMP_WG_ENDPOINT:-${JUMP_HOST}:${JUMP_WG_PORT:-51820}}"
 # mDNS local-discovery announcer (MULTI_SITE_SPEC.md Appendix B): tell theta-agent
 # on the same LAN which public hostnames this site fronts and what the site slug
-# is, so it can skip the relay. CFG_LOCAL_DISCOVERY_HOSTS overrides; empty means
-# the gateway stays silent (the announcer's default).
+# is, so it can skip the relay -- and, for a roaming agent or a fresh install
+# discovering what site (if any) it's physically at, the directory's own
+# hostname/version too. CFG_LOCAL_DISCOVERY_HOSTS overrides; empty means the
+# gateway stays silent (the announcer's default).
 if [[ -n "${CFG_LOCAL_DISCOVERY_HOSTS:-}" ]]; then
 	LOCAL_DISCOVERY_HOSTS="$CFG_LOCAL_DISCOVERY_HOSTS"
 else
@@ -1403,6 +1471,12 @@ else
 fi
 gateway_env_set SITE_SLUG "${SITE_SLUG:-local}"
 gateway_env_set THETA_LOCAL_DISCOVERY_HOSTS "$LOCAL_DISCOVERY_HOSTS"
+# The directory's own public hostname, explicitly -- SSO_HOST is always the
+# first entry of LOCAL_DISCOVERY_HOSTS by construction above, but a manual
+# CFG_LOCAL_DISCOVERY_HOSTS override could reorder/drop it, so the announcer
+# gets it as its own field rather than assuming "first in the list".
+gateway_env_set THETA_LOCAL_DISCOVERY_DIRECTORY_HOST "${SSO_HOST:-}"
+gateway_env_set THETA_SUITE_VERSION "$(git describe --tags 2>/dev/null || echo unknown)"
 $SUDO systemctl restart theta-gateway
 
 info "Waiting for theta-gateway to be healthy..."
@@ -1653,7 +1727,7 @@ else
 	info "theta-agent installation skipped (CFG_THETA_AGENT_ENABLE=0)."
 fi
 # ── 7d. Configure theta-agent integration with this host ─────────────────────
-# Non-interactive configuration driven by setup.env variables:
+# Non-interactive configuration driven by master.env/spoke.env variables:
 #   CFG_THETA_AGENT_ENABLE (default: 1) - Install/configure theta-agent
 #   CFG_THETA_AGENT_LDAP_AUTH (default: 1) - Configure LDAP authentication via ldap-client
 #   CFG_THETA_AGENT_FULL_CONTROL (default: 1) - Enable all agent capabilities

@@ -37,7 +37,7 @@ services:
         # correctly (git -C sso-manager-node rev-parse --short HEAD).
         GIT_COMMIT: ${SSO_GIT_COMMIT:-}
         # Optional upstream HTTP(S) proxy for npm/apt during the build (NOT
-        # the theta42 "proxy" app). Set CFG_HTTP_PROXY in setup.env; empty by
+        # the theta42 "proxy" app). Set CFG_HTTP_PROXY in master.env/spoke.env; empty by
         # default, so this is a no-op unless configured.
         HTTP_PROXY: ${CFG_HTTP_PROXY:-}
         HTTPS_PROXY: ${CFG_HTTPS_PROXY:-}

@@ -38,20 +38,21 @@ replication](#how-this-relates-to-ldap-replication) below.
    admin, no enrolled agents), either:
    - Paste the master's URL and the join key into the Master Site modal's
      **Join an Existing Site** form, or
-   - Set `CFG_MASTER_DIRECTORY_URL` / `CFG_MASTER_DIRECTORY_JOIN_KEY` before
-     the first `./setup.sh` run -- either in `setup.env` (which has every
-     option), or in a dedicated `spoke.env` (`cp spoke.env.example spoke.env`)
-     if you'd rather keep join-a-cluster config separate from the rest of the
-     stack's setup. Both are read; `spoke.env`'s values win on a conflict.
-     No public IP on this site at all? `spoke.env.example` also covers the
-     no-inbound relay vars (`CFG_SPOKE_NO_INBOUND`/`CFG_SPOKE_PUBLIC_HOST`).
+   - Set `CFG_MASTER_DIRECTORY_URL` / `CFG_MASTER_DIRECTORY_JOIN_KEY` in
+     `spoke.env` (`cp spoke.env.example spoke.env`) before the first
+     `./setup.sh` run. `spoke.env` is self-sufficient — do NOT also create
+     `master.env`; `setup.sh` refuses to run with both present. There's no
+     `CFG_DOMAIN` to set either: the LDAP identity namespace is fetched
+     automatically from the master using the join key, so it can't drift from
+     the master's by a typo. No public IP on this site at all?
+     `spoke.env.example` also covers the no-inbound relay vars
+     (`CFG_SPOKE_NO_INBOUND`/`CFG_SPOKE_PUBLIC_HOST`).
 
      Want this spoke reachable at its own public domain rather than sharing
-     the master's? `CFG_DOMAIN` (the LDAP identity namespace) must stay
-     identical across every site in a cluster — MMR replicas can't diverge
-     on base DN — but `CFG_PUBLIC_DOMAIN` overrides just this site's own web
-     hostnames (`sso.*`/`proxy.*`) independently of it. Only meaningful for
-     an inbound spoke serving its own traffic directly.
+     the master's? `CFG_PUBLIC_DOMAIN` (also in `spoke.env`) overrides just
+     this site's own web hostnames (`sso.*`/`proxy.*`), independently of the
+     shared LDAP domain. Only meaningful for an inbound spoke serving its own
+     traffic directly.
 3. The spoke pulls the master's full export (LDAP tree, resource catalog,
    agent-signing key) and adopts it, then registers its own reachable URL
    with the master so it can receive live updates going forward.

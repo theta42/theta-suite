@@ -80,7 +80,7 @@ real TLS certificates for it via Let's Encrypt. A `.local` or made-up name only
 gets you a self-signed cert (browsers will warn — fine for testing, painful for
 daily use).
 
-The domain is the **one** value you set in `setup.env` (e.g.
+The domain is the **one** value you set in `master.env` (e.g.
 `CFG_DOMAIN=lab.example.com`) — see *Quickstart*. The SSO/proxy hostnames
 default to `sso.<domain>` / `proxy.<domain>`, and the LDAP base DN
 (`dc=lab,dc=example,dc=com`) is built from it automatically.
@@ -132,7 +132,7 @@ Optional extra ports (only if you need them):
   network and doesn't need them.
   **Do not forward 389/636 to the public internet.** If you need LAN clients to
   bind LDAP, set `CFG_LDAPS_HOST=ldap.internal.example.com` (or `sso-manager` for
-  same-host Docker clients) in `setup.env` and use an internal DNS record / cert
+  same-host Docker clients) in `master.env` and use an internal DNS record / cert
   SAN. The default shows the public SSO hostname, which implies a public route.
 
 ### 4. Docker + Docker Compose
@@ -149,19 +149,26 @@ deployment.
 ```bash
 git clone --recursive https://github.com/theta42/theta-suite.git
 cd theta-suite
-cp setup.env.example setup.env     # then edit setup.env: set CFG_DOMAIN to your domain
-./setup.sh            # first run: generates ./config/ from setup.env, builds + bootstraps + starts
+cp master.env.example master.env     # then edit master.env: set CFG_DOMAIN to your domain
+./setup.sh            # first run: generates ./config/ from master.env, builds + bootstraps + starts
 ```
 
-Your domain is entered **once** in `setup.env` (e.g.
+Joining an *existing* site's directory as a spoke instead of seeding a fresh
+one? Use `spoke.env`, not `master.env` — `cp spoke.env.example spoke.env`,
+set `CFG_MASTER_DIRECTORY_URL`/`CFG_MASTER_DIRECTORY_JOIN_KEY`, then
+`./setup.sh`. `spoke.env` is self-sufficient (no `CFG_DOMAIN` needed — it's
+fetched from the master); `setup.sh` refuses to run if both `master.env` and
+`spoke.env` exist, or neither does. See [Multi-Site](docs/sso/multi-site.md).
+
+Your domain is entered **once** in `master.env` (e.g.
 `CFG_DOMAIN=lab.example.com`) — the LDAP base DN (`dc=lab,dc=example,dc=com`)
 is derived from it, however many labels it has. The
-first `./setup.sh` reads `setup.env` and generates `./config/sso-secrets.js` +
+first `./setup.sh` reads `master.env` and generates `./config/sso-secrets.js` +
 `./config/proxy-secrets.js` with that domain filled in everywhere (hostnames
 default to `sso.<domain>` / `proxy.<domain>`) plus random secrets, then builds
 and brings up the stack in the same run — no edit-and-re-run step.
-`setup.env` is used only on that first run; once `./config/*.js` exist they are
-operator-owned and `setup.env` is ignored.
+`master.env` is used only on that first run; once `./config/*.js` exist they are
+operator-owned and `master.env` is ignored.
 
 `./setup.sh` is idempotent — re-run it any time to converge the stack to
 `./config/`. It:
@@ -209,7 +216,7 @@ via the `CONF_SECRETS` env var:
   `clientId`/`clientSecret` — filled in by the bootstrap), `ldap` (bind creds,
   same `serviceAccountPass`), `auth` (admin groups/users).
 
-`./setup.sh` generates both on first run from `./setup.env` (the one place the
+`./setup.sh` generates both on first run from `./master.env` (the one place the
 domain is entered — see *Quickstart*) with random secrets, seeds them into
 OpenBao, and mints scoped per-app tokens (`SSO_VAULT_TOKEN` /
 `PROXY_VAULT_TOKEN` / `JUMP_VAULT_TOKEN`) into `./.env`. There is **no
@@ -478,7 +485,8 @@ exactly in the bootstrap) so the SSO can verify them on bind.
 
 ```
 theta-suite/
-├── setup.env.example   # first-run config template — cp to setup.env, set CFG_DOMAIN
+├── master.env.example  # fresh/standalone site — cp to master.env, set CFG_DOMAIN
+├── spoke.env.example   # OR: join an existing site — cp to spoke.env instead (mutually exclusive)
 ├── config.example/      # committed annotated config templates (copy to ./config/)
 ├── docker-compose.yml   # sso-manager + proxy + openbao on one bridge net (gateway is host-installed)
 ├── setup.sh             # one-command idempotent bring-up (manages ./config/ + backups)
@@ -491,7 +499,7 @@ theta-suite/
 └── theta-agent/         # git submodule
 ```
 
-`./setup.sh` reads the gitignored `setup.env` on first run to generate the
+`./setup.sh` reads the gitignored `master.env` on first run to generate the
 gitignored `./config/` (`sso-secrets.js` + `proxy-secrets.js`) and snapshots to
 the gitignored `./backups/` before each rebuild.
 

@@ -100,7 +100,7 @@ You don't have to build the graph by hand — the theta42 tooling registers itse
 
 [theta-env](https://github.com/theta42/theta-env)'s `./setup.sh` seeds the directory on every run with the stack it deploys:
 
-- a **site** (name from `CFG_SITE_NAME` in `setup.env`, default `local` → slug `site_local`) marked as the current site
+- a **site** (name from `CFG_SITE_NAME` in `master.env`, default `local` → slug `site_local`) marked as the current site
 - the **host** the stack runs on (`host_<hostname>`), with IP, MAC address, OS, and kernel collected from the machine
 - the **services** it composes — Theta Directory, Proxy (management UI), OpenLDAP Directory (the LDAPS endpoint Linux hosts and LDAP-native apps bind to), and OpenResty Edge (the 80/443 data plane) — each with its address, internal port, and git repo
 - the proxy's auto-registered **OAuth client**, linked under its service

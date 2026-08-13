@@ -14,14 +14,16 @@ backups/
 .env
 proxy.env
 
-# setup.env — operator's first-run domain config (copied from setup.env.example,
-# which IS committed). Holds the domain as a base DN; setup.env itself is
-# per-deployment and is not committed.
+# master.env / spoke.env — operator's first-run bring-up config (copied from
+# master.env.example / spoke.env.example, which ARE committed). Exactly one of
+# the two exists per deployment: master.env holds the domain as a base DN for
+# a fresh/standalone site; spoke.env holds the master URL + site join key for
+# a site joining an existing directory. Per-deployment, not committed.
+# setup.env: pre-split legacy name, auto-migrated to master.env on first run
+# (see setup.sh) — kept ignored here in case an old deployment hasn't been
+# through that migration yet.
 setup.env
-
-# spoke.env — same rule as setup.env, but for the join-a-cluster vars split
-# out for clarity (spoke.env.example IS committed). Holds a real site join
-# key once filled in.
+master.env
 spoke.env
 
 # Backup artifacts (hold secrets — the whole user directory + Redis dumps)

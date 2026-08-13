@@ -1,7 +1,7 @@
 ---
 layout: default
 title: Quickstart
-description: Step-by-step first run for theta-suite — prerequisites, setup.env, and bringing up the stack with ./setup.sh.
+description: Step-by-step first run for theta-suite — prerequisites, master.env, and bringing up the stack with ./setup.sh.
 ---
 
 # Quickstart Guide
@@ -38,11 +38,11 @@ git submodule update --init --recursive
 
 ---
 
-## 2. Configure `setup.env` (enter your domain once)
+## 2. Configure `master.env` (enter your domain once)
 
 ```bash
-cp setup.env.example setup.env
-$EDITOR setup.env      # set CFG_DOMAIN to your domain
+cp master.env.example master.env
+$EDITOR master.env      # set CFG_DOMAIN to your domain
 ```
 
 Your domain is entered **once**, as a plain DNS domain. The SSO/proxy
@@ -51,7 +51,7 @@ is built from it (any number of labels works — a domain like
 `myhost.duckdns.org` becomes `dc=myhost,dc=duckdns,dc=org`), so for most
 setups `CFG_DOMAIN` is the only value you set:
 
-| `setup.env` key | Example | Notes |
+| `master.env` key | Example | Notes |
 |-----|---------|-------|
 | `CFG_DOMAIN` | `lab.local` | your domain — **required** |
 | `CFG_SSO_HOST` | `sso.lab.local` | optional, defaults to `sso.<domain>` |
@@ -62,22 +62,24 @@ setups `CFG_DOMAIN` is the only value you set:
 | `CFG_JUMP_HOST` | `jump.lab.local` | optional, defaults to `jump.<domain>` (the [SSH jump host](https://theta42.github.io/theta-suite/jump-host/) is installed on this host by `setup.sh` as the `theta-gateway` service) |
 | `JUMP_SSH_PORT` | `2222` | optional: host port for the jump host's SSH (never 22 by default) |
 
-`setup.env` is used **only on the first run** to generate `./config/`; after
-that `./config/*.js` are operator-owned and `setup.env` is ignored. Secrets
+`master.env` is used **only on the first run** to generate `./config/`; after
+that `./config/*.js` are operator-owned and `master.env` is ignored. Secrets
 (LDAP admin password, JWT, admin password, service-account password) are
 **generated** into `./config/*.js` on first run — do **not** put them in
-`setup.env`. See `setup.env.example` for the full annotated shape, and
+`master.env`. See `master.env.example` for the full annotated shape, and
 `config.example/` + each submodule's `secrets.js.example` for the generated
 file shape.
 
 > **Migrating from an older `.env`-based deployment?** If `.env`/`proxy.env`
 > exist, `./setup.sh` migrates them into `./config/` preserving your existing
-> secrets — no need to write a `setup.env`.
+> secrets — no need to write a `master.env`.
 
 > **Joining an existing Theta Directory cluster instead of seeding a fresh
-> one?** See [Multi-Site (Master/Spoke Join)](sso/multi-site.html) —
-> `spoke.env.example` has the join-a-cluster vars split out into their own
-> file, or set them directly in `setup.env` (which has every option).
+> one?** Don't use `master.env` at all — see
+> [Multi-Site (Master/Spoke Join)](sso/multi-site.html) and use
+> `spoke.env.example` instead. It's self-sufficient (no `CFG_DOMAIN` needed —
+> it's fetched from the master using the join key), and `setup.sh` refuses to
+> run if both `master.env` and `spoke.env` exist, or neither does.
 
 ---
 
@@ -87,7 +89,7 @@ file shape.
 ./setup.sh
 ```
 
-The first run reads `setup.env`, generates `./config/sso-secrets.js` +
+The first run reads `master.env`, generates `./config/sso-secrets.js` +
 `./config/proxy-secrets.js` with your domain filled in everywhere plus random
 secrets, then builds and starts the stack in the same run (no edit-and-re-run).
 What happens:

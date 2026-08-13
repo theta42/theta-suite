@@ -86,7 +86,7 @@ Basic-auth passwords used: `dkim:HomeLab!2024`, `schen:Engineering!24`,
 
 ## Domain
 
-`CFG_DOMAIN=laptop-dev.vm42.us` in `setup.env`, real public DNS (CNAME
+`CFG_DOMAIN=laptop-dev.vm42.us` in `master.env`, real public DNS (CNAME
 through `718it.biz`) that resolves back to this machine. `CFG_LDAPS_HOST`
 is pinned to the LAN IP of the interface holding the default route
 (`ip route get 1.1.1.1`), not just any active interface — this machine had
@@ -117,7 +117,7 @@ node -e "console.log(require('./config/proxy-secrets.js').auth.localAdminPass)"
 node -e "console.log(require('./config/jump-secrets.js').auth.localAdminPass)"
 ```
 
-Ports (from `setup.env` — check it, these are operator-configurable):
+Ports (from `master.env` — check it, these are operator-configurable):
 SSO `3001`, Proxy management UI `3010` (`MGMT_PORT`), Jump-host `3002`.
 
 A freshly-bootstrapped `admin` account hits the onboarding flow (accept ToS,

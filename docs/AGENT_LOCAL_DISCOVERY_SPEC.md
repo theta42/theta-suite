@@ -10,11 +10,36 @@ A no-inbound spoke site's public hostname (e.g. `sso-staten-island.theta42.com`)
 
 ## What to Build
 
-### 1. Announcer (gateway/proxy side — may already be scoped elsewhere, confirm before duplicating)
-The spoke's `theta-gateway` or `theta-proxy` periodically advertises itself via mDNS on the local segment:
+### 1. Announcer (gateway/proxy side — implemented: `jump-host/nodejs/services/mdns_announce.js`, runs inside `theta-gateway`)
+The site's `theta-gateway` periodically advertises itself via mDNS on the local segment:
 - Service type: `_theta-suite._tcp.local`
-- TXT records: `site=<slug>`, `hosts=<comma-separated list of public hostnames this site fronts>`
+- TXT records:
+  - `site=<slug>` — this site's slug (`SITE_SLUG`)
+  - `hosts=<comma-separated list>` — every public hostname this site fronts (SSO, proxy, jump)
+  - `directoryHost=<hostname>` — the directory's own public hostname specifically, distinct from `hosts` (`THETA_LOCAL_DISCOVERY_DIRECTORY_HOST`, always `SSO_HOST` in the normal case)
+  - `directoryAddr=<lan-ip>:<port>` — the directory's explicit LAN-reachable address, computed by the announcer itself rather than left to mDNS's own address-record auto-detection (see the pitfall below)
+  - `version=<theta-suite version>` — `THETA_SUITE_VERSION` (`git describe --tags`), so a roaming agent or a fresh install can identify what it's talking to before connecting
 - Advertised address: the service's own local LAN IP
+
+  **Known pitfall, already hit in production**: the underlying mDNS library
+  (`bonjour-service`) builds an A/AAAA record from *every* interface
+  `os.networkInterfaces()` reports, with no filtering and no config knob to
+  restrict it. On a host that also runs Docker — true of every theta-suite
+  box, since `theta-gateway` runs on the host specifically so it can do this
+  kind of networking while everything else runs in containers — this means
+  the announcement can resolve to a `docker0`/`br-*` bridge gateway address
+  (e.g. `172.18.0.1`) instead of the real LAN IP, and a listener trusting the
+  literal mDNS response address gets routed nowhere. `mdns_announce.js`
+  works around this two ways: it monkey-patches the published `Service`'s
+  `records()` to drop A/AAAA records matching a known virtual-interface-name
+  prefix list (`docker`, `br-`, `veth`, `cni`, `podman`, `virbr`, `flannel`,
+  `tun`, `tap`, `lxcbr`, `vnet`, `wg`), AND separately computes
+  `directoryAddr` from the same filtered interface list as an explicit TXT
+  field — so a listener that prefers `directoryAddr` over the raw response
+  address is correct even if a future library version regresses the
+  records() patch. theta-agent's own IP-reporting (`telemetry.go`) hit the
+  identical bug independently; the interface-prefix list is intentionally
+  kept in sync between the two.
 
 ### 2. Listener + Override (this doc's actual scope — theta-agent)
 - New config field in `agent.yml`, e.g. `prefer_local_directory: bool` (default `false` — opt-in, not automatic, since it changes name resolution behavior on the host).
