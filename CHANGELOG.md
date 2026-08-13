@@ -10,6 +10,14 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [theta-agent](https://github.com/theta42/theta-agent/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v3.18.1] - 2026-08-13
+
+- `spoke.env.example`'s `CFG_CREATE_ALL_HTTP` now defaults to `1`
+  (uncommented) instead of being an opt-in comment — a spoke typically sits
+  behind the master's/an external ingress's TLS termination already, so
+  serving its own proxy over plain HTTP internally is the common case for
+  this file, not the exception `master.env.example` treats it as.
+
 ## [v3.18.0] - 2026-08-13
 
 - **`setup.sh` runs two independent slow steps in parallel instead of
