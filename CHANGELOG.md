@@ -10,6 +10,18 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [theta-agent](https://github.com/theta42/theta-agent/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v3.17.2] - 2026-08-13
+
+- **theta-agent [v2.8.1](https://github.com/theta42/theta-agent/releases/tag/v2.8.1)** —
+  fix: Windows release binaries are now actually Authenticode-signed.
+  `release.yml`'s signing step had silently never run on any release —
+  wrong runner OS (needs Windows, was `ubuntu-latest`), a renamed action
+  (`azure/artifact-signing-action@v2`, was `trusted-signing-action`), and
+  an `if:` guard checking a job `env` var that was never populated from the
+  secret. Fixed and verified against the real published `v2.8.1` release
+  asset (`theta-agent-windows-amd64.exe` carries a 15,640-byte embedded
+  Authenticode signature, `CN="THETA 42, INC."`), not just an isolated test.
+
 ## [v3.17.1] - 2026-08-13
 
 - **theta-directory [v2.22.1](https://github.com/theta42/theta-directory/releases/tag/v2.22.1)** —
