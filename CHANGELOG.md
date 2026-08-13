@@ -10,6 +10,29 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [theta-agent](https://github.com/theta42/theta-agent/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v3.12.0] - 2026-08-13
+
+- **theta-directory [v2.20.0](https://github.com/theta42/theta-directory/releases/tag/v2.20.0)** —
+  service subtype registration, per-service metrics, live service UI. Directory-side
+  counterpart to theta-agent v2.6.0 ([v3.11.0](#v3110---2026-08-13)).
+
+  - **Register and monitor services of many types.** The Directory now
+    reconciles the services an agent registers (`register <type> <name>` for
+    systemd, docker, podman, process, systemd-timer, cron, lxc, kvm/libvirt)
+    into `service` child resources under the host, keyed by a generic
+    `serviceName` + `subType`. Legacy `systemdService`/`dockerContainer`
+    resources are backfilled so they keep reconciling in place.
+  - **Per-service live metrics.** The theta-agent driver surfaces each
+    service's active state, CPU%, memory, restart count and uptime, plus
+    schedule fields (`next_run`, `last_run`, `triggered_count`) for
+    timers/cron and VM `status` for lxc/kvm.
+  - **Live service status in the UI.** A service resource's edit modal now
+    shows a live "Status & metrics" card (active badge, CPU/mem/restarts/uptime,
+    schedule or VM state) that re-renders on every `agent.telemetry` WebSocket
+    frame, so the panel updates in near-real-time while open.
+  - `register_service`/`unregister_service` agent WebSocket frames are handled
+    and acknowledged with a response.
+
 ## [v3.11.0] - 2026-08-13
 
 - **theta-agent [v2.6.0](https://github.com/theta42/theta-agent/releases/tag/v2.6.0)** —
