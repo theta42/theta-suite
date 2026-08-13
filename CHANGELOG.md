@@ -10,6 +10,23 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [theta-agent](https://github.com/theta42/theta-agent/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v3.16.0] - 2026-08-13
+
+- **theta-directory [v2.21.1](https://github.com/theta42/theta-directory/releases/tag/v2.21.1)**,
+  **proxy [v2.4.1](https://github.com/theta42/proxy/releases/tag/v2.4.1)**,
+  **jump-host [v3.3.1](https://github.com/theta42/jump-host/releases/tag/v3.3.1)** —
+  fix: clicking "Run Import" on the LDIF import page threw an uncaught
+  exception instead of showing the confirmation dialog.
+  `app.messages.confirm(message, null, type)` — the form used by any page
+  with no inline `.actionMessage` element, `ldif_import.ejs` among them —
+  called `.closest()` on the null target inside
+  [`@simpleworkjs/frontend`](https://github.com/simpleworkjs/frontend)'s
+  `renderActionHtml`. `confirm()` also had no toast fallback at all for
+  that case (unlike `action()`) — it just warned to the console and left
+  its promise pending forever, which would have made the button look
+  broken even after the crash itself was fixed. Bumped to
+  `@simpleworkjs/frontend` v0.4.1 across all three apps that vendor it.
+
 ## [v3.15.0] - 2026-08-13
 
 - **theta-agent [v2.8.0](https://github.com/theta42/theta-agent/releases/tag/v2.8.0)** —
