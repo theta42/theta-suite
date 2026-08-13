@@ -9,6 +9,19 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [jump-host](https://github.com/theta42/jump-host/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v3.10.0] - 2026-08-13
+
+- **proxy [v2.4.0](https://github.com/theta42/proxy/releases/tag/v2.4.0)** —
+  fix: wildcard renewal was hardcoded to "within 30 days of expiry", a third of
+  a 90-day certificate. Let's Encrypt now issues 6-day certificates and the
+  CA/B Forum has voted maximum validity down toward ~47 days; against a 47-day
+  cert that rule renewed at two weeks old, and against a 6-day cert it was true
+  on *every* daily check, reissuing forever into the duplicate-certificate rate
+  limit. Renewal is now a fraction of the certificate's own lifetime, read from
+  its `notBefore`/`notAfter`. Also fixes two unawaited calls in the same path
+  that made a failed renewal an unhandled rejection and let one host's failure
+  end the renewal loop for every other host.
+
 ## [v3.9.1] - 2026-08-13
 
 - **proxy [v2.3.2](https://github.com/theta42/proxy/releases/tag/v2.3.2)** —
