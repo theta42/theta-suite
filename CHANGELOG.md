@@ -10,6 +10,19 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [theta-agent](https://github.com/theta42/theta-agent/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v3.17.0] - 2026-08-13
+
+- **theta-directory [v2.22.0](https://github.com/theta42/theta-directory/releases/tag/v2.22.0)** —
+  feat: HP iLO discovery + power control. A new `ilo` discovery plugin
+  (Redfish-based) pulls a physical server's model, serial, firmware,
+  health, power state, and both the iLO management NIC's and the host OS's
+  own NICs' MAC/IP from one iLO endpoint per server. Unlike most existing
+  subtype drivers (still fixed sample-data stubs), the new `ilo` driver is
+  fully real: live power/health polling and real power-control actions
+  (power on / graceful reboot / force restart / graceful shutdown / force
+  off) via Redfish's `ComputerSystem.Reset`, with one-click buttons in the
+  resource modal.
+
 ## [v3.16.0] - 2026-08-13
 
 - **theta-directory [v2.21.1](https://github.com/theta42/theta-directory/releases/tag/v2.21.1)**,
