@@ -1414,16 +1414,47 @@ for i in $(seq 1 60); do
 	sleep 2
 done
 
+# The gateway runs on the host, so the proxy reaches it across the container
+# boundary. Register it by IP, NOT by the name `host.docker.internal`:
+# `extra_hosts: host-gateway` puts that name in the container's /etc/hosts only.
+# getent, curl and ping all find it there, but nginx does not read /etc/hosts --
+# proxy.conf's `proxy_pass $target_scheme://$target:$target_port` uses variables,
+# so nginx resolves the target at request time through `resolver 127.0.0.11`
+# (Docker's embedded DNS), which does not serve extra_hosts entries. The name
+# therefore resolves for every tool you would debug with and NXDOMAINs for the
+# one process that matters, and every request to the gateway 502s.
+#
+# This regressed in v3.1.0: while the gateway was still a compose service the
+# target was `jump-host`, a real container name the embedded DNS did answer.
+info "Resolving the host gateway address for the proxy..."
+JUMP_TARGET_IP="$("${COMPOSE[@]}" exec -T proxy getent hosts host.docker.internal 2>/dev/null | awk '{print $1; exit}' | tr -d '\r')"
+if [[ -z "$JUMP_TARGET_IP" ]]; then
+	warn "could not resolve host.docker.internal inside the proxy container — falling back to the docker bridge gateway."
+	JUMP_TARGET_IP="$(docker network inspect -f '{{range .IPAM.Config}}{{.Gateway}}{{end}}' bridge 2>/dev/null | head -n1)"
+fi
+[[ -n "$JUMP_TARGET_IP" ]] || die "could not determine how the proxy should reach the host gateway (tried host.docker.internal and the docker bridge gateway)."
+info "  gateway reachable from the proxy at ${JUMP_TARGET_IP}:3002"
+
 info "Registering ${JUMP_HOST} (jump-host web UI) with the proxy..."
 JUMP_HOSTS_OUT=$("${COMPOSE[@]}" exec -T proxy node <<NODEEOF || true
 const {Host} = require('/app/models').models;
+const TARGET_IP = $(js_str "$JUMP_TARGET_IP");
 (async () => {
 	try {
-		try { await Host.get($(js_str "$JUMP_HOST")); console.log('SKIP ${JUMP_HOST} (already exists)'); }
-		catch (e) {
-			if (e.name !== 'EntryNotFound') throw e;
-			await Host.create({ host: $(js_str "$JUMP_HOST"), ip: 'host.docker.internal', targetPort: 3002, forcessl: $( [[ "${CFG_CREATE_ALL_HTTP:-0}" == "1" ]] && echo false || echo true ), targetssl: false, sso_enabled: false, created_by: 'setup.sh' });
-			console.log('CREATED ${JUMP_HOST} -> host.docker.internal:3002');
+		let existing = null;
+		try { existing = await Host.get($(js_str "$JUMP_HOST")); }
+		catch (e) { if (e.name !== 'EntryNotFound') throw e; }
+
+		if (!existing) {
+			await Host.create({ host: $(js_str "$JUMP_HOST"), ip: TARGET_IP, targetPort: 3002, forcessl: $( [[ "${CFG_CREATE_ALL_HTTP:-0}" == "1" ]] && echo false || echo true ), targetssl: false, sso_enabled: false, created_by: 'setup.sh' });
+			console.log('CREATED ${JUMP_HOST} -> ' + TARGET_IP + ':3002');
+		} else if (existing.ip !== TARGET_IP) {
+			// Self-heal a record left pointing at the unresolvable name by an
+			// older setup.sh, or at a bridge address that has since changed.
+			await existing.update({ ip: TARGET_IP });
+			console.log('UPDATED ${JUMP_HOST} ' + existing.ip + ' -> ' + TARGET_IP + ':3002');
+		} else {
+			console.log('SKIP ${JUMP_HOST} (already points at ' + TARGET_IP + ')');
 		}
 		process.exit(0);
 	} catch (error) { console.error('ERROR', error.message); process.exit(1); }

@@ -9,6 +9,311 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [jump-host](https://github.com/theta42/jump-host/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v3.8.1] - 2026-08-12
+
+- fix: **the jump host's web UI 502'd on every clean install.** setup.sh
+  registered the gateway with the proxy as `host.docker.internal`, a name that
+  `extra_hosts: host-gateway` puts in the container's `/etc/hosts` and nowhere
+  else. Docker's embedded DNS does not serve `extra_hosts` entries, nginx does
+  not read `/etc/hosts`, and the proxy's `proxy_pass` uses variables — so nginx
+  resolves the target per request through `resolver 127.0.0.11` and NXDOMAINs.
+  The failure is unusually misleading: `getent`, `curl` and `ping` inside the
+  proxy container all find the name, and `curl
+  http://host.docker.internal:3002/health` returns 200, because every one of
+  those reads `/etc/hosts`. Only the process that matters cannot see it.
+  Regressed in v3.1.0, when the gateway left the compose stack: until then the
+  target was `jump-host`, a real container name the embedded DNS answered.
+  setup.sh now resolves the gateway to an address once and registers that, and
+  a re-run updates a record pointing elsewhere — so an install left broken by an
+  older setup.sh heals itself rather than being skipped as "already exists".
+
+## [v3.8.0] - 2026-08-12
+
+  jump-host  v3.1.6 -> v3.2.0
+  proxy  v2.2.0 -> v2.3.0
+  sso-manager-node  v2.18.0 -> v2.19.0
+  theta-agent  v2.5.0 -> v2.5.1
+
+**Notifications across the suite**, and the last of the live-update rollout.
+
+Every model event you are allowed to see is a notification. That is the whole
+design: a notification system's hard problem is "who should see this", and the
+socket read gate already answers it — live, per row, every time an event goes
+out. So there is no recipient resolution and no fan-out table. A notification is
+an event that reached you, and history is those same events replayed through the
+same gate. Clicking one opens the record that changed.
+
+History stores the **shape** only — model, action, pk, actor, owner, timestamp —
+never the payload, so it does not become a second copy of your data retaining a
+deleted record's contents after it is gone. Unread is one watermark per user
+rather than a read flag per item, so opening the bell on one device clears the
+badge on all of them. A later compliance/audit trail extends this rather than
+replaces it: what it adds is before/after values and immutability, not a
+different shape.
+
+Collapsing is not cosmetic. Creating one directory resource emits eleven events
+— the resource, its groups, its edges — and a discovery sweep emits hundreds.
+The feed says "11 resource groups added"; history keeps every row.
+
+- **jump-host** pushed nothing over its socket before; it was attached only so
+  the shared front-end kept working. Everything there arrives *with* its read
+  gate rather than after one. Its event stream is the SSH audit trail — who
+  connected to which host, announced on the attempt and again when the session
+  ends and its success and byte counts are known.
+- **theta-agent v2.5.1** brings the suite's pin back onto the mainline. The
+  agent repo's history was rewritten to prune its size, and the previous pin
+  (v2.5.0) survived only via its tag, off the rewritten `master`.
+- The notification client now ships in `@simpleworkjs/frontend` 0.4.0 rather
+  than a copy in each app; each app supplies only which page a given kind of
+  notification opens. `@simpleworkjs/backend` 0.3.0 carries the server half, so
+  a framework-native app gets the feed with no code of its own.
+
+## [v3.7.0] - 2026-08-12
+
+  proxy  v2.1.1 -> v2.2.0
+  sso-manager-node  v2.17.0 -> v2.18.0
+
+Four more views stop lying about the current state.
+
+- feat: **the proxy's Profile page updates itself.** Your own record and your
+  own API tokens both sat static until a reload, because `User` and `ApiToken`
+  never published — only `Host` was ever exported wrapped. This is the page
+  where staleness misleads most: it is the one showing you your own access, so
+  an admin changing your groups left you reading the old answer indefinitely.
+- feat: **a model can narrow which of its writes announce themselves.**
+  `ApiToken` announces create and remove only: its best-effort `last_used_on`
+  write happens on every authenticated API call, and announcing that would put
+  an event on the socket per request. Previously the choice was all-or-nothing,
+  which is why it published nothing at all.
+- feat: **the Directory's Catalog and Discovered Inventory views update
+  themselves.** Both read models that already published and were already gated;
+  neither subscribed. The case that matters: an admin approves your access
+  request while the tile you are looking at still tells you that you cannot get
+  in.
+- fix: `User` and `ApiToken` hit the same export trap as `LocalGroup` and
+  `Permission` before them — registering a wrapped model only makes the wrapper
+  reachable through the model registry, and the routes import those files
+  directly. Three models deep now; worth a lint rule.
+- security: both new gates are row-level rather than model-level. `User` is
+  admin-or-self; `ApiToken` is owner-scoped with **no admin bypass**, matching a
+  REST route that has none either — a personal access token is nobody else's
+  business. Verified against the serialized socket frame: a PAT create carries
+  no `secret_hash`, a user create carries no password field.
+
+## [v3.6.1] - 2026-08-12
+
+  proxy  v2.1.0 -> v2.1.1
+  jump-host  v3.1.5 -> v3.1.6
+
+- fix: **filtered rows carrying a Bootstrap display utility were never actually
+  hidden** in the proxy. jQuery's `.hide()` writes a plain inline
+  `display: none`, which loses to `.d-flex` / `.d-block` / `.d-grid` because
+  those are `!important` in Bootstrap's stylesheet. The Permissions list and the
+  Dynamic A records list are both built from `list-group-item d-flex` rows, so
+  their search reported the right count while every row stayed on screen. Also
+  fixes the filter count going stale after a row arrived live ("6 of 4 shown").
+  Both come from `@simpleworkjs/frontend` 0.3.1, now on all three apps.
+
+## [v3.6.0] - 2026-08-12
+
+  sso-manager-node  v2.16.1 -> v2.17.0
+
+- feat: **the Network and Overview tabs update themselves.** Network's three
+  models already published and already carried socket read gates — the view
+  simply never subscribed. Overview's notification history follows
+  `Notification`, and its stats card follows `User` and `Resource` rather than
+  inventing a "stats" record to publish: the aggregate is derived, and the
+  things it derives from already announce themselves. Each list and panel
+  reloads only its own fetch, debounced.
+- feat: Redis-backed models can announce their own writes. `Notification` and
+  `ApiToken` have no custom mutators, so `withEvents()` wraps create/update/
+  remove on the class — deliberately not a Proxy over the class, which is the
+  approach that published the *class* name as the primary key for every model
+  keyed on `name`.
+- fix: `ApiToken` payloads carry no `secret_hash` — asserted against the
+  serialized payload rather than the object, since a key is "in" an object even
+  when its value is undefined.
+- note: the Overview metrics panel is **not** live. It reads failed-login and
+  service-usage counters incremented outside any model write, so no model event
+  corresponds to them; that panel needs its own emit where the counters change.
+- chore: `@simpleworkjs/frontend` 0.3.1 across all three apps — filtered rows
+  carrying a Bootstrap `d-flex`/`d-block`/`d-grid` class are actually hidden
+  now, and the filter count no longer goes stale.
+
+## [v3.5.1] - 2026-08-12
+
+  sso-manager-node  v2.16.0 -> v2.16.1
+
+- security: **the theta-agent pushes went to every authenticated socket.**
+  `agent.telemetry` (CPU/RAM/disk per host), `agent.discovery` (host inventory:
+  open ports, services) and `agent.response` — **the output of commands run on a
+  host** — were sent with a bare `app.io.emit`, with no read check of any kind.
+  The agent channel can run arbitrary bash, and its results were reaching every
+  logged-in user regardless of whether they may see the host. This is the same
+  defect fixed for model events in v3.3.0, on a channel that was missed because
+  it does not carry model events — and the Directory page consumes two of these
+  on a dedicated socket precisely to bypass the gated one, so the leak had a live
+  consumer. All three now apply the same per-socket check as model events,
+  against the same admin groups the agent REST routes already require, and
+  channels are fail-closed: one with no gate is not delivered at all.
+
+## [v3.5.0] - 2026-08-12
+
+  sso-manager-node  v2.15.0 -> v2.16.0
+
+**Storage backend no longer decides whether a page can update itself.**
+
+- feat: model events are standardized. The ORM announced changes for models it
+  managed; everything else was silent, so LDAP groups and users, Redis-backed
+  notifications and PATs could not update a view no matter what the view did.
+  They now publish the identical contract — `model:<Name>:<action>` carrying
+  `{model, action, pk, data}` — so a subscriber cannot tell which backend a
+  model uses. `data` goes through `toJSON()` (stripping `isPrivate` fields) and a
+  delete never carries a body, enforced in the emitter rather than trusted to
+  each call site. ORM and bespoke models share one filtered bus, so "does this
+  model have a read gate?" is answered in exactly one place.
+- feat: LDAP groups and users announce create/update/delete, and the users and
+  profile views consume them — a user added, or a group membership changed, by
+  another admin now shows up without a refresh. That includes someone's own
+  profile, where a stale page is most misleading, since it is showing them their
+  own access.
+- security: read gates for every model whose data the UI renders. Several are
+  row-level rather than merely model-level: a user receives their own User
+  record, notifications, PATs and mesh clients and nobody else's, while a
+  directory admin receives all of them except PATs — which have no admin path
+  because the REST route has none either.
+- security: User payloads strip `userPassword` explicitly. It IS present on a
+  record read with `attributes: ['*','+']` as the admin bind, and stayed off the
+  wire only because `user_parse()` sets it to `undefined` inside an `if` branch —
+  an incidental protection in an unrelated function, not somewhere to hang a
+  credential. Verified against the encoded socket frame, not just the object.
+
+## [v3.4.0] - 2026-08-12
+
+  sso-manager-node  v2.14.0 -> v2.15.0
+
+**The Directory updates itself now too.** v3.3.0 secured this app's socket
+bridge and left it carrying nothing; this wires it up. Two more reasons nothing
+auto-updated, both in sso-manager-node:
+
+- fix: **the socket never connected at all.** `authIO` called
+  `Auth.checkToken(tok)` with a bare string where `{token}` is expected, then
+  called `token.getUser()` — but `checkToken` returns the User itself and has no
+  such method. Every handshake failed with `token.getUser is not a function`, so
+  no client in this app has ever had a working socket.
+- fix: **nothing published.** `@simpleworkjs/orm` has a `pubsub` hook that emits
+  `model:<Name>:<action>` on save/delete, and it was never wired. It is now,
+  through a filter that forwards only models carrying a socket read gate — the
+  ORM publishes for everything it loads, and that includes `AuthToken`,
+  `OtpToken` and `PasswordResetToken`, written on every login and password
+  reset.
+- feat: the Directory and Discovery Plugins views update themselves. A resource
+  added, renamed or removed by another admin, or by a discovery plugin run, now
+  appears without a refresh. The Directory table is derived (hierarchy from the
+  edge list, agent status from another service, indentation recomputed on
+  render), so a change re-derives the view rather than patching one row — which
+  would leave a new child at the wrong depth with no caret on its parent. The
+  operator's search/sort/secrets filter survives the reload.
+- security: `READERS` is the single source of truth for what goes live: a model
+  listed there both publishes and is authorized there, so the two cannot drift.
+  `Resource`, `ResourceGroup` and `PluginInstance` are gated to the same admin
+  groups that guard their REST routes, resolved transitively from LDAP and
+  cached briefly per socket. Verified with two sockets side by side: a directory
+  admin receives the events, an ordinary user receives nothing.
+
+jump-host is unchanged and stays at v3.1.5: it has one `jq-repeat` list (a
+user's own API tokens), no pubsub controller, and attaches socket.io only to
+serve the client library — there is nothing there worth a publisher and gate.
+
+## [v3.3.0] - 2026-08-12
+
+  jump-host  v3.1.4 -> v3.1.5
+  proxy  v2.0.1 -> v2.1.0
+  sso-manager-node  v2.13.0 -> v2.14.0
+
+**Every list in the proxy updates itself now, and every list can be filtered.**
+Nothing in the suite auto-updated except one table, and the reasons turned out
+to be two bugs rather than a missing feature. Fixing them also closed a data
+leak on the socket bridge shared by all three apps.
+
+### proxy v2.1.0
+
+- feat: **every list is live and filterable.** Hosts, Permissions, Groups, DNS
+  providers and Dynamic A records use `app.filter.live()` from
+  `@simpleworkjs/frontend`: a change made by another admin, or by a background
+  job, patches the one affected row in place — so scroll position, checkbox
+  selection and open dropdowns survive it. Each list gains a search box and a
+  "shown" count; Hosts also gains a wildcard/single facet, and its search now
+  covers IP, port and DNS provider rather than the hostname alone.
+- fix: **only the Proxy List ever updated itself, because only `Host`
+  published events.** Every model registers a `ModelPs` proxy, but only
+  `host.js` *exported* it — the others exported the raw class, and the routes
+  import those files directly. `LocalGroup` and `Permission` published nothing
+  at all, so those pages were subscribed to events that were never sent.
+- fix: **`ModelPs` published the class name as the primary key.** `getIndex()`
+  read `model[Model._key]` with `model` being the class on a static call, and
+  every class has a built-in `.name` — so for any model keyed on `name`, the pk
+  of every event was the literal string `"LocalGroup"`. Creates appended a row
+  matching nothing; updates would have duplicated the record. `Host` behaved
+  only because its key is `host` and `Host.host` is undefined.
+- fix: the DNS and Permissions lists declared `jq-repeat-index` where
+  `jq-index-key` was meant. The former is an attribute jq-repeat *writes* onto
+  rendered rows and never reads as configuration, so those scopes had no key
+  and every `remove`/`update` lookup returned -1 — swallowed on the DNS page by
+  empty `catch{}` blocks, which made it look wired up while doing nothing.
+- security: **model events were broadcast to every authenticated socket.**
+  `app.io.emit` sent every event, with its full record, to every connected
+  client with no per-model or per-row read check — a viewer scoped to one
+  domain received live payloads for every other domain in the install. Events
+  are now gated per socket by `utils/socket_pubsub.js`, mirroring the REST read
+  guards, with resolved rights cached briefly and busted when a grant or group
+  membership changes. Models with no gate are not broadcast at all, so a new
+  model must opt in deliberately rather than start leaking the moment it is
+  wrapped in `ModelPs`.
+- security: **clients could inject topics.** `socket.on('P2PSub')` republished
+  anything a client emitted to every other client. No app code has ever called
+  `app.publish()`, so nothing legitimate used it; events now flow
+  server -> client only.
+- fix: a delete event carries a `null` body, and the client tagged it
+  unconditionally — throwing and killing the socket handler.
+
+### sso-manager-node v2.14.0
+
+- security: **the socket bridge rebroadcast whatever a client published.**
+  `socket.on('P2PSub')` took any topic and payload an authenticated client
+  emitted and fanned it out to every other connected client. Nothing
+  legitimate used it. Events now flow server -> client only.
+- security: the outbound side was an unconditional `app.io.emit` of every event
+  to every authenticated socket. Nothing here publishes model events yet, so it
+  carried no traffic — but it would have started leaking the moment anything
+  did. Replaced by `utils/socket_pubsub.js`, a per-socket read gate whose
+  `READERS` table is **empty by design**: nothing is broadcast until a model
+  opts in together with the check that decides who may see its events.
+- fix: a `null` delete body killed the client socket handler.
+- feat: the shared UI shell loads `app.sync.js` and `app.filter.js`, so views
+  here can adopt live updates and filtering.
+- chore: `authIO` records the session's groups on the socket, which is what a
+  read gate resolves rights from.
+
+### jump-host v3.1.5
+
+- feat: the shared UI shell loads `app.sync.js` and `app.filter.js`.
+- chore: removed the client-side publish forwarding from `app-base.js`. This
+  app attaches socket.io only to serve the client library, so there was no
+  bridge to secure here — but the code was dead weight, and its twin in the
+  other two apps was the injection path described above.
+- fix: a `null` delete body killed the client socket handler.
+
+### Framework
+
+Requires `@simpleworkjs/frontend` >= 0.3.0 (`app.sync.bind()` and
+`app.filter`); 0.3.1 adds three fixes found by driving 0.3.0 in a browser —
+rows carrying a Bootstrap `d-flex`/`d-block`/`d-grid` class were never actually
+hidden (jQuery's `.hide()` writes a non-important inline style, which loses to
+those `!important` utilities), a stale filter count, and pk precedence. The
+apps depend on `^0.3.0`, which 0.3.1 satisfies, so a routine `npm install`
+picks it up.
+
 ## [v3.2.0] - 2026-08-12
 
   jump-host  v3.1.3 -> v3.1.4
