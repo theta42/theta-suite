@@ -10,6 +10,18 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [theta-agent](https://github.com/theta42/theta-agent/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v3.17.1] - 2026-08-13
+
+- **theta-directory [v2.22.1](https://github.com/theta42/theta-directory/releases/tag/v2.22.1)** —
+  fix: the `ilo` plugin (v2.22.0, previous release) reported `kind: 'host'`
+  with the iLO's own out-of-band management address, so the generic
+  discovery reconciler could merge it into the actual server's own host
+  resource (discovered separately via theta-agent/Proxmox) and have one
+  side's real address silently overwritten by the other's. `ilo` now
+  reports `kind: 'bmc'` (structurally un-mergeable with a `host` resource)
+  and links to the server explicitly via a new optional `hostSlug` config
+  field, same pattern as the `docker` plugin's `hostSlug`.
+
 ## [v3.17.0] - 2026-08-13
 
 - **theta-directory [v2.22.0](https://github.com/theta42/theta-directory/releases/tag/v2.22.0)** —
