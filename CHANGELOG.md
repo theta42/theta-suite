@@ -10,6 +10,41 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [theta-agent](https://github.com/theta42/theta-agent/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v3.14.0] - 2026-08-13
+
+- **jump-host [v3.3.0](https://github.com/theta42/jump-host/releases/tag/v3.3.0)**
+  and **theta-agent [v2.7.0](https://github.com/theta42/theta-agent/releases/tag/v2.7.0)** —
+  fix: mDNS local-discovery could announce/route to a Docker bridge IP
+  (e.g. `172.18.0.1`) instead of the real LAN address, reproduced live: a
+  theta-agent found its directory "announced locally at 172.18.0.1" and
+  failed to pin a route to it. `bonjour-service` (the announcer, running
+  inside `theta-gateway` on the host) builds address records from *every*
+  local interface with no filtering, so on a host that also runs Docker the
+  response could resolve to a bridge gateway address instead of the real
+  LAN IP. jump-host now patches the published service's records to drop
+  virtual/bridge interfaces, and adds explicit `directoryHost`/
+  `directoryAddr`/`version` TXT fields computed from the same filtered
+  interface list; theta-agent prefers `directoryAddr` over the raw mDNS
+  response address when present.
+- **theta-directory [v2.21.0](https://github.com/theta42/theta-directory/releases/tag/v2.21.0)** —
+  `POST /api/site/ping` now reports `baseDn`, the master-side half of the
+  `spoke.env` self-sufficiency change below.
+
+## [v3.13.0] - 2026-08-13
+
+- **Split `setup.env` into mutually exclusive `master.env` / `spoke.env`.**
+  `setup.sh` now requires exactly one of the two to exist — dies with a
+  clear message on both or neither, auto-migrating a pre-existing
+  `setup.env` to `master.env` transparently. `spoke.env` is now fully
+  self-sufficient: no `CFG_DOMAIN` — it's fetched automatically from the
+  master (`POST /api/site/ping`, theta-directory v2.21.0 above) using the
+  join key alone, before any local bootstrap happens. A spoke previously had
+  to separately create `setup.env` just to hand-type `CFG_DOMAIN` — a value
+  that must byte-for-byte match the master's LDAP base DN, so a mismatch
+  didn't surface until after a full local bootstrap (containers built,
+  secrets generated), deep inside the LDAP import. A bad/unreachable join
+  key now fails in the first second instead of at the end.
+
 ## [v3.12.1] - 2026-08-13
 
 - **theta-agent [v2.6.1](https://github.com/theta42/theta-agent/releases/tag/v2.6.1)** —
