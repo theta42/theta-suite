@@ -71,6 +71,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
+SETUP_START_TIME="$(date +%s)"
 CFG_ADMIN_PASS="${CFG_ADMIN_PASS:-}"
 CONFIG_DIR=./config
 BACKUP_DIR=./backups
@@ -1660,78 +1661,77 @@ if [[ "$CFG_THETA_AGENT_ENABLE" == "1" ]]; then
 		else
 			chmod +x "$AGENT_BIN_TMP"
 			info "  Installing theta-agent binary..."
-			if true; then
-				# The agent binary reads /etc/theta42/agent.yml (theta-agent/main.go).
-				sudo mkdir -p /etc/theta42
-				if [[ ! -f /etc/theta42/agent.yml ]]; then
-					sudo cp agent.yml.example /etc/theta42/agent.yml
-					# Write the JOIN KEY, not a locally-invented token. The SSO
-					# only accepts credentials it issued, so the random token
-					# this used to generate could never authenticate -- the
-					# agent looped on "close 4001: Unauthorized" forever. The
-					# agent swaps this key for its own token (and the public key
-					# it must pin) on first connect and rewrites this file.
-					if [[ -n "$AGENT_JOIN_KEY" ]]; then
-						# Only the join key is written. The agent exchanges it
-						# for its own token + the SSO public key on first
-						# connect and rewrites this file itself.
-						#
-						# This used to sed a locally generated random value into
-						# auth_token. The SSO only accepts credentials it
-						# issued, so that token could never authenticate and the
-						# agent looped on "close 4001: Unauthorized" forever.
-						if sudo grep -q '^join_key:' /etc/theta42/agent.yml; then
-							sudo sed -i "s|^join_key:.*|join_key: \"${AGENT_JOIN_KEY}\"|" /etc/theta42/agent.yml
-						else
-							echo "join_key: \"${AGENT_JOIN_KEY}\"" | sudo tee -a /etc/theta42/agent.yml >/dev/null
-						fi
-						# Older agent.yml.example shipped REPLACE_WITH_* placeholders;
-						# blank them so they are not mistaken for real credentials.
-						sudo sed -i "s|REPLACE_WITH_ISSUED_AGENT_TOKEN||; s|REPLACE_WITH_AGENT_TOKEN||; s|REPLACE_WITH_SSO_PUBLIC_KEY||" /etc/theta42/agent.yml
+			# The agent binary reads /etc/theta42/agent.yml (theta-agent/main.go).
+			$SUDO mkdir -p /etc/theta42
+			if [[ ! -f /etc/theta42/agent.yml ]]; then
+				$SUDO cp agent.yml.example /etc/theta42/agent.yml
+				# Write the JOIN KEY, not a locally-invented token. The SSO
+				# only accepts credentials it issued, so the random token
+				# this used to generate could never authenticate -- the
+				# agent looped on "close 4001: Unauthorized" forever. The
+				# agent swaps this key for its own token (and the public key
+				# it must pin) on first connect and rewrites this file.
+				if [[ -n "$AGENT_JOIN_KEY" ]]; then
+					# Only the join key is written. The agent exchanges it
+					# for its own token + the SSO public key on first
+					# connect and rewrites this file itself.
+					#
+					# This used to sed a locally generated random value into
+					# auth_token. The SSO only accepts credentials it
+					# issued, so that token could never authenticate and the
+					# agent looped on "close 4001: Unauthorized" forever.
+					if $SUDO grep -q '^join_key:' /etc/theta42/agent.yml; then
+						$SUDO sed -i "s|^join_key:.*|join_key: \"${AGENT_JOIN_KEY}\"|" /etc/theta42/agent.yml
 					else
-						warn "No agent join key available — /etc/theta42/agent.yml has no credential and the agent will not connect."
+						echo "join_key: \"${AGENT_JOIN_KEY}\"" | $SUDO tee -a /etc/theta42/agent.yml >/dev/null
 					fi
-					# We want to connect to either https or http depending on CFG_CREATE_ALL_HTTP.
-					# Without this, agent.yml keeps agent.yml.example's literal
-					# "https://sso.example.com" placeholder forever -- nothing
-					# else in this block ever touched server_url, only join_key.
-					AGENT_SCHEME="https"; [[ "${CFG_CREATE_ALL_HTTP:-0}" == "1" ]] && AGENT_SCHEME="http"
-					sudo sed -i "s|^server_url:.*|server_url: \"${AGENT_SCHEME}://${CFG_SSO_HOST}\"|" /etc/theta42/agent.yml
-					sudo getent group theta-secrets >/dev/null 2>&1 || sudo groupadd -r theta-secrets 2>/dev/null || true
-					sudo getent group theta >/dev/null 2>&1 || sudo groupadd -r theta 2>/dev/null || true
-					SECRETS_GRP="root"
-					if getent group theta-secrets >/dev/null 2>&1; then SECRETS_GRP="theta-secrets"; elif getent group theta >/dev/null 2>&1; then SECRETS_GRP="theta"; fi
-					sudo chown -R "root:$SECRETS_GRP" /etc/theta42 2>/dev/null || true
-					sudo chmod 750 /etc/theta42
-					sudo chmod 640 /etc/theta42/agent.yml
+					# Older agent.yml.example shipped REPLACE_WITH_* placeholders;
+					# blank them so they are not mistaken for real credentials.
+					$SUDO sed -i "s|REPLACE_WITH_ISSUED_AGENT_TOKEN||; s|REPLACE_WITH_AGENT_TOKEN||; s|REPLACE_WITH_SSO_PUBLIC_KEY||" /etc/theta42/agent.yml
 				else
-					# Self-heal an already-installed agent.yml that predates the
-					# server_url fix above -- it would otherwise keep whatever
-					# placeholder/stale host it was first installed with
-					# forever, since nothing else in this script ever revisits
-					# an existing agent.yml. Never touches join_key/auth_token:
-					# those may since have been rewritten by the agent itself
-					# with real issued credentials.
-					AGENT_SCHEME="https"; [[ "${CFG_CREATE_ALL_HTTP:-0}" == "1" ]] && AGENT_SCHEME="http"
-					if sudo grep -q '^server_url:' /etc/theta42/agent.yml; then
-						sudo sed -i "s|^server_url:.*|server_url: \"${AGENT_SCHEME}://${CFG_SSO_HOST}\"|" /etc/theta42/agent.yml
-					fi
+					warn "No agent join key available — /etc/theta42/agent.yml has no credential and the agent will not connect."
 				fi
-				# Stop a running agent before overwriting its binary (cp into a
-				# running executable fails with "Text file busy" on a re-install).
-				sudo systemctl stop theta-agent.service 2>/dev/null || true
-				sudo cp "$AGENT_BIN_TMP" /usr/local/bin/theta-agent
-				sudo chmod +x /usr/local/bin/theta-agent
-				rm -f "$AGENT_BIN_TMP"
+				# We want to connect to either https or http depending on CFG_CREATE_ALL_HTTP.
+				# Without this, agent.yml keeps agent.yml.example's literal
+				# "https://sso.example.com" placeholder forever -- nothing
+				# else in this block ever touched server_url, only join_key.
+				AGENT_SCHEME="https"; [[ "${CFG_CREATE_ALL_HTTP:-0}" == "1" ]] && AGENT_SCHEME="http"
+				$SUDO sed -i "s|^server_url:.*|server_url: \"${AGENT_SCHEME}://${CFG_SSO_HOST}\"|" /etc/theta42/agent.yml
+				$SUDO getent group theta-secrets >/dev/null 2>&1 || $SUDO groupadd -r theta-secrets 2>/dev/null || true
+				$SUDO getent group theta >/dev/null 2>&1 || $SUDO groupadd -r theta 2>/dev/null || true
+				SECRETS_GRP="root"
+				if getent group theta-secrets >/dev/null 2>&1; then SECRETS_GRP="theta-secrets"; elif getent group theta >/dev/null 2>&1; then SECRETS_GRP="theta"; fi
+				$SUDO chown -R "root:$SECRETS_GRP" /etc/theta42 2>/dev/null || true
+				$SUDO chmod 750 /etc/theta42
+				$SUDO chmod 640 /etc/theta42/agent.yml
+			else
+				# Self-heal an already-installed agent.yml that predates the
+				# server_url fix above -- it would otherwise keep whatever
+				# placeholder/stale host it was first installed with
+				# forever, since nothing else in this script ever revisits
+				# an existing agent.yml. Never touches join_key/auth_token:
+				# those may since have been rewritten by the agent itself
+				# with real issued credentials.
+				AGENT_SCHEME="https"; [[ "${CFG_CREATE_ALL_HTTP:-0}" == "1" ]] && AGENT_SCHEME="http"
+				if $SUDO grep -q '^server_url:' /etc/theta42/agent.yml; then
+					$SUDO sed -i "s|^server_url:.*|server_url: \"${AGENT_SCHEME}://${CFG_SSO_HOST}\"|" /etc/theta42/agent.yml
+				fi
+			fi
+			# Stop a running agent before overwriting its binary (cp into a
+			# running executable fails with "Text file busy" on a re-install).
+			$SUDO systemctl stop theta-agent.service 2>/dev/null || true
+			$SUDO cp "$AGENT_BIN_TMP" /usr/local/bin/theta-agent
+			$SUDO chmod +x /usr/local/bin/theta-agent
+			rm -f "$AGENT_BIN_TMP"
 
-				# Install desktop tray companion if available
-				TRAY_SRC="dist/theta-agent-tray-linux-amd64"
-				if [[ ! -f "$TRAY_SRC" ]] && [[ -f "theta-agent-tray-linux-amd64" ]]; then TRAY_SRC="theta-agent-tray-linux-amd64"; fi
-				if [[ -f "$TRAY_SRC" ]]; then
-					sudo cp "$TRAY_SRC" /usr/local/bin/theta-agent-tray
-					sudo chmod +x /usr/local/bin/theta-agent-tray
-					sudo mkdir -p /etc/xdg/autostart
-					sudo bash -c "cat <<'EOF' > /etc/xdg/autostart/theta-agent-tray.desktop
+			# Install desktop tray companion if available
+			TRAY_SRC="dist/theta-agent-tray-linux-amd64"
+			if [[ ! -f "$TRAY_SRC" ]] && [[ -f "theta-agent-tray-linux-amd64" ]]; then TRAY_SRC="theta-agent-tray-linux-amd64"; fi
+			if [[ -f "$TRAY_SRC" ]]; then
+				$SUDO cp "$TRAY_SRC" /usr/local/bin/theta-agent-tray
+				$SUDO chmod +x /usr/local/bin/theta-agent-tray
+				$SUDO mkdir -p /etc/xdg/autostart
+				$SUDO bash -c "cat <<'EOF' > /etc/xdg/autostart/theta-agent-tray.desktop
 [Desktop Entry]
 Type=Application
 Name=Theta Agent Tray
@@ -1742,10 +1742,10 @@ Terminal=false
 Categories=Utility;System;
 X-GNOME-Autostart-enabled=true
 EOF"
-					info "  theta-agent-tray companion installed."
-				fi
+				info "  theta-agent-tray companion installed."
+			fi
 
-				sudo bash -c "cat <<'EOF' > /etc/systemd/system/theta-agent.service
+			$SUDO bash -c "cat <<'EOF' > /etc/systemd/system/theta-agent.service
 [Unit]
 Description=Theta Agent
 After=network.target
@@ -1759,10 +1759,9 @@ RestartSec=5
 [Install]
 WantedBy=multi-user.target
 EOF"
-				sudo systemctl daemon-reload
-				sudo systemctl enable --now theta-agent.service
-				info "  theta-agent installed and started."
-			fi
+			$SUDO systemctl daemon-reload
+			$SUDO systemctl enable --now theta-agent.service
+			info "  theta-agent installed and started."
 		fi
 	)
 else
@@ -1835,17 +1834,17 @@ LDAPVARS
 	if [[ "$CFG_THETA_AGENT_FULL_CONTROL" == "1" ]]; then
 		info "  Configuring theta-agent with full host control capabilities..."
 		if [[ -f /etc/theta42/agent.yml ]]; then
-			sudo sed -i 's/arbitrary_bash: false/arbitrary_bash: true/' /etc/theta42/agent.yml
+			$SUDO sed -i 's/arbitrary_bash: false/arbitrary_bash: true/' /etc/theta42/agent.yml
 			# service_control is a []string allowlist (NOT a bool) — setting it to
 			# `true` makes the agent fail YAML decode and crash-loop. There is no
 			# wildcard; leave the operator's list (or the [] default = deny all)
 			# alone and document how to enable specific services.
-			# sudo sed -i 's/service_control: .*/service_control: true/' ...
-			sudo sed -i 's/reboot: false/reboot: true/' /etc/theta42/agent.yml
-			sudo sed -i 's/configure_ldap: false/configure_ldap: true/' /etc/theta42/agent.yml
+			# $SUDO sed -i 's/service_control: .*/service_control: true/' ...
+			$SUDO sed -i 's/reboot: false/reboot: true/' /etc/theta42/agent.yml
+			$SUDO sed -i 's/configure_ldap: false/configure_ldap: true/' /etc/theta42/agent.yml
 			info "    (service_control left as its allowlist; set e.g. service_control: [\"nginx\"] in /etc/theta42/agent.yml to permit managing specific services)"
 			info "  theta-agent full control enabled. Restarting service..."
-			sudo systemctl restart theta-agent.service
+			$SUDO systemctl restart theta-agent.service
 		else
 			warn "  /etc/theta42/agent.yml not found. Full control not configured."
 		fi
@@ -1857,8 +1856,10 @@ else
 fi
 
 # ── 8. Summary ───────────────────────────────────────────────────────────────
+SETUP_END_TIME="$(date +%s)"
+SETUP_DURATION=$(( SETUP_END_TIME - SETUP_START_TIME ))
 echo
-printf '\033[1;34m[setup]\033[0m \033[1;32mDone. Your SSO + proxy stack is up.\033[0m\n'
+printf '\033[1;34m[setup]\033[0m \033[1;32mDone. Your SSO + proxy stack is up. (took %ds)\033[0m\n' "$SETUP_DURATION"
 echo
 echo "  SSO Manager UI:    https://${SSO_HOST}   (fronted by the proxy under TLS)"
 echo "                      first-run fallback: http://127.0.0.1:${SSO_PORT:-3001}"

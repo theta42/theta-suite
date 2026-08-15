@@ -12,10 +12,15 @@ test('Integration Test Suite', async (t) => {
 
   await t.test('Proxy should be running and route to SSO Manager', async () => {
     // Testing the proxy routes traffic to SSO manager
-    const res = await fetch('http://sso.localtest.me/.well-known/openid-configuration');
-    assert.ok(res.status === 200 || res.status === 301);
-    const body = await res.json();
-    assert.ok(body.issuer);
+    const res = await fetch('http://sso.localtest.me/.well-known/openid-configuration', { redirect: 'follow' });
+    if (res.status === 200) {
+      const body = await res.json();
+      assert.ok(body.issuer);
+    } else if (res.status === 301 || res.status === 302) {
+      assert.ok(res.headers.get('location'));
+    } else {
+      assert.fail(`Unexpected response status from proxy: ${res.status}`);
+    }
   });
 
   await t.test('Proxy Management API should be running', async () => {

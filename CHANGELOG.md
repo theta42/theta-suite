@@ -10,6 +10,24 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [theta-agent](https://github.com/theta42/theta-agent/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v3.19.0] - 2026-08-14
+
+  sso-manager-node  v2.22.1 -> v2.22.2
+  jump-host         v3.3.1  -> v3.3.2
+  proxy             v2.4.1  -> v2.4.2
+
+- **Notification Upgrades & @simpleworkjs/frontend 0.4.2**:
+  - Adopted `@simpleworkjs/frontend` 0.4.2 across all web interfaces (`sso-manager-node`, `proxy`, `jump-host`).
+  - **In-App Live Toasts (`toast: true`)**: Real-time foreground toast notifications trigger when events arrive while actively working in a tab, ending silent badge-only updates.
+  - **Rich Semantic Category Icons**: Renders distinct FontAwesome category icons and badges for Identity, Infrastructure, Security, Access Requests, and Mesh networks.
+  - **Interactive Notification Dropdown**: Header controls for one-click "Mark all read" and "Clear list" history management.
+- **Installer & Environment Enhancements (`setup.sh`)**:
+  - Replaced hardcoded `sudo` calls with `$SUDO` for safe execution across custom sudo wrappers and root environments.
+  - Added elapsed setup execution timer displayed in the final summary.
+  - Optimized `jump-host/install.sh` to preserve existing `node_modules` during application tree updates, speeding re-runs to <1s.
+  - Removed deprecated `migrate-ldap.sh`.
+  - Hardened parameter passing in `bootstrap/seed-demo-users.sh`.
+
 ## [v3.18.1] - 2026-08-13
 
 - `spoke.env.example`'s `CFG_CREATE_ALL_HTTP` now defaults to `1`

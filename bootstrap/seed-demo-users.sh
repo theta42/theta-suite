@@ -33,9 +33,9 @@ hash_password() {
   node -e "
     const crypto = require('crypto');
     const salt = crypto.randomBytes(8);
-    const hash = crypto.createHash('sha512').update('$1').update(salt).digest();
+    const hash = crypto.createHash('sha512').update(process.argv[1]).update(salt).digest();
     console.log('{SSHA512}' + Buffer.concat([hash, salt]).toString('base64'));
-  "
+  " "$1"
 }
 
 # create_person <uid> <sn> <given_name> <mail> <uidNumber> <password> [description]
