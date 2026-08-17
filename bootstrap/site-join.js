@@ -30,15 +30,18 @@ const ADMIN_UID       = (sso.bootstrap && sso.bootstrap.adminUid) || 'admin';
 const ADMIN_USER_PASS = (sso.bootstrap && sso.bootstrap.adminPass) || '';
 const SSO_INTERNAL    = 'http://localhost:3001';
 
-const masterUrl = process.argv[2];
-const joinKey   = process.argv[3];
-const selfUrl   = process.argv[4] || '';
+const masterUrl  = process.argv[2];
+const joinKey    = process.argv[3];
+const selfUrl    = process.argv[4] || '';
+const siteSlug   = process.argv[5] || '';
+const noInbound  = process.argv[6] === 'true';
+const publicHost = process.argv[7] || '';
 
 function log(msg) { console.error('[site-join] ' + msg); }
 
 async function main() {
   if (!masterUrl || !joinKey) {
-    throw new Error('usage: node /bootstrap/site-join.js <masterUrl> <joinKey>');
+    throw new Error('usage: node /bootstrap/site-join.js <masterUrl> <joinKey> [selfUrl] [siteSlug] [noInbound] [publicHost]');
   }
 
   // 1. Login as the bootstrap admin (validates the password end-to-end).
@@ -56,10 +59,18 @@ async function main() {
   log(`Logged in as ${ADMIN_UID}`);
 
   // 2. Join the master.
+  const payload = {
+    masterUrl,
+    joinKey,
+    ...(selfUrl ? { selfUrl } : {}),
+    ...(siteSlug ? { siteSlug } : {}),
+    ...(noInbound ? { noInbound: true, publicHost } : {})
+  };
+
   const res = await fetch(`${SSO_INTERNAL}/api/site/join`, {
     method: 'POST',
     headers: { 'auth-token': token, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ masterUrl, joinKey, ...(selfUrl ? { selfUrl } : {}) }),
+    body: JSON.stringify(payload),
   });
   const text = await res.text().catch(() => '');
   let data = null;

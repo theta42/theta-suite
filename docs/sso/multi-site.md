@@ -54,11 +54,16 @@ replication](#how-this-relates-to-ldap-replication) below.
      shared LDAP domain. Only meaningful for an inbound spoke serving its own
      traffic directly.
 3. The spoke pulls the master's full export (LDAP tree, resource catalog,
-   agent-signing key) and adopts it, then registers its own reachable URL
+   agent-signing key, and shared OpenBao integration secrets) and adopts it, then registers its own reachable URL
    with the master so it can receive live updates going forward.
 4. From then on, every change to the master's catalog pushes to every
-   registered spoke automatically. A spoke's own directory-write requests are
-   rejected with a `403` pointing at the master — writes always go there.
+   registered spoke automatically.
+5. **Transparent Write-Forwarding**: A spoke operates as a live edge cache for
+   reads, and transparently forwards all mutating API requests (creating users,
+   editing hosts, updating permissions, enrolling agents) upstream to the
+   Master directory. Operators experience a seamless single-pane-of-glass
+   regardless of which site's UI they are connected to, while all writes commit
+   canonically to the Master.
 
 ### Promoting a spoke to master
 
@@ -129,15 +134,13 @@ is already a spoke refuses to join again.
 | LDAP (users, groups) | Full export on join; live push on every master change |
 | Resource catalog (hosts, apps, sites) | Same |
 | Agent-signing key | Same — every site can validly sign a command for any agent enrolled at *any* site |
+| OpenBao integration secrets (`secret/integrations/*`, `secret/plugins/*`, `secret/conf/*`) | Replicated during export and live sync — gives all sites disaster recovery parity for integrations |
 
-The agent-signing key being identical everywhere is a deliberate tradeoff for
-small, trusted deployments (a handful of sites, not hundreds) — it means
-compromising the least-secured spoke has the same agent-command blast radius
-as compromising the master. If that tradeoff doesn't fit your deployment,
-don't rely on this mechanism as-is.
+The agent-signing key and integration secrets being synced everywhere is a deliberate tradeoff for
+small, trusted deployments (a handful of sites, not hundreds).
 
-Secrets *beyond* the agent-signing key (LDAP admin password, JWT secret, and
-so on) are **not** currently synced — each site still generates its own.
+Per-site internal instance secrets (local LDAP admin password, local JWT secret)
+remain unique per host.
 
 ## Requirements and current limits
 

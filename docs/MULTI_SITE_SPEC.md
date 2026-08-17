@@ -74,9 +74,10 @@ Consequence: `theta-agent` needs **no change** to support multi-site — it alre
 
 | Data | Mechanism | Direction |
 |---|---|---|
-| LDAP (users, groups) | OpenLDAP MMR syncrepl | master (write) → spokes (read-only) |
-| OpenBao secrets (incl. agent-signing key at `secret/agent/signing-key`) | **New**: custom replicator (OpenBao has no built-in multi-site replication — Performance Replication is Vault-Enterprise-only, confirmed absent from OpenBao as of this writing) | master (write) → spokes (read-only) |
-| Directory catalog (Resources: hosts, apps, sites) | Existing catalog change events | master (write) → spokes (read-only) |
+| LDAP (users, groups) | OpenLDAP MMR syncrepl | master (write) → spokes (read-only edge cache) |
+| OpenBao shared secrets (agent-signing key, `secret/integrations/*`, `secret/plugins/*`) | Export / adoption via `@simpleworkjs/bao-conf` | master (write) → spokes (read-only edge cache) |
+| Directory catalog (Resources: hosts, apps, sites) | Existing catalog change events + live resync push | master (write) → spokes (read-only edge cache) |
+| Mutating API writes (User/host creation, edits) | **Transparent Write-Forwarding**: Spoke reverse-proxies mutating requests to master | spokes (forward) → master (authoritative commit) |
 | Audit log | Async batch worker, already speced (§6) | spokes → master |
 
 ### 2.2 Replication Delivery: Fire-and-Forget
@@ -258,7 +259,9 @@ See [`AGENT_LOCAL_DISCOVERY_SPEC.md`](./AGENT_LOCAL_DISCOVERY_SPEC.md) — split
 |---|---|
 | Site role persisted (not in-memory) | **Shipped** — `/config/site.json` on `sso-manager-node`, survives restarts (v2.2.0) |
 | Join key issuance + one-time directory adoption | **Shipped** — `/api/site/join-keys`, `/api/site/export`, `/api/site/join`, fresh-install-gated (v2.2.0–v2.3.0) |
-| Spoke read-only enforcement | **Shipped** — directory-write routes 403 toward the master once joined (v2.3.0) |
+| Spoke transparent write-forwarding | **Shipped** — mutating requests to `/api/*` on spokes are transparently forwarded to master with user context, eliminating 403 errors and single-site admin restrictions while guaranteeing single write authority. |
+| OpenBao integration secrets replication | **Shipped** — shared OpenBao secrets (`secret/integrations/*`, `secret/plugins/*`, `secret/conf/*`) export on join/resync and adopt via `@simpleworkjs/bao-conf`, establishing DR parity across all cluster nodes. |
+| Inbound Hub Architecture | **Enforced** — Master site serves as the full-inbound anchor (public ports / domain) and transit router for spokes behind NAT/CGNAT. |
 | WAN health check | **Shipped** — `/api/site/ping`, live in the Master Site modal (v2.2.0–v2.3.0) |
 | `spoke.env` / `setup.sh` join wiring | **Shipped** — `CFG_MASTER_DIRECTORY_URL` / `CFG_MASTER_DIRECTORY_JOIN_KEY`, `bootstrap/site-join.js` (theta-suite v2.2.0). `spoke.env` (`spoke.env.example`) is a self-sufficient bring-up config, mutually exclusive with `master.env` — see §4 for the `CFG_DOMAIN` auto-fetch that makes it so. |
 | Continuous/live replication (vs. one-time export-on-join) | **Shipped** (`sso-manager-node`) — a spoke registers its own endpoint at join time (`POST /api/site/spokes`), and every successful master catalog write fires a fire-and-forget push (`utils/site_replicate.js`) at every registered spoke, which re-pulls a fresh export. Verified end-to-end in `docker-compose.multisite-e2e.yml`. |

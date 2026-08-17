@@ -675,6 +675,9 @@ BAOEOF
 	# before, hostnames derive from CFG_DOMAIN like any standalone install.
 	CFG_SSO_HOST="${CFG_SSO_HOST:-sso.${CFG_PUBLIC_DOMAIN:-$CFG_DOMAIN}}"
 	CFG_PROXY_HOST="${CFG_PROXY_HOST:-proxy.${CFG_PUBLIC_DOMAIN:-$CFG_DOMAIN}}"
+	if (( IS_SPOKE )) && [[ -z "$CFG_SITE_NAME" ]]; then
+		die "spoke.env must set CFG_SITE_NAME (e.g. CFG_SITE_NAME=staten-island). Every site in the cluster requires a unique name."
+	fi
 	CFG_SITE_NAME="${CFG_SITE_NAME:-local}"
 	# Multi-site identity (site_config.js's `siteSlug`, shown on the Directory's
 	# Multi-Site modal) -- without this it's never set anywhere and every fresh
@@ -1377,12 +1380,16 @@ fi
 # joined reports "already a spoke" and setup continues.
 if [[ -n "${CFG_MASTER_DIRECTORY_URL:-}" && -n "${CFG_MASTER_DIRECTORY_JOIN_KEY:-}" ]]; then
 	info "Joining master site ${CFG_MASTER_DIRECTORY_URL} (CFG_MASTER_DIRECTORY_*)..."
-	# selfUrl (https://$CFG_SSO_HOST, already derived above) registers this
+	# selfUrl (http(s)://$CFG_SSO_HOST, already derived above) registers this
 	# spoke for LIVE replication -- without it the join still succeeds, but
 	# the master has no way to reach this spoke to push resync pings, so it
 	# only ever gets the one-time snapshot from the moment it joined.
+	SPOKE_SELF_SCHEME="https"
+	[[ "${CFG_CREATE_ALL_HTTP:-0}" == "1" ]] && SPOKE_SELF_SCHEME="http"
+	SPOKE_SELF_URL="${SPOKE_SELF_SCHEME}://$CFG_SSO_HOST"
 	if ! "${COMPOSE[@]}" exec -T sso-manager node /bootstrap/site-join.js \
-			"$CFG_MASTER_DIRECTORY_URL" "$CFG_MASTER_DIRECTORY_JOIN_KEY" "https://$CFG_SSO_HOST"; then
+			"$CFG_MASTER_DIRECTORY_URL" "$CFG_MASTER_DIRECTORY_JOIN_KEY" "$SPOKE_SELF_URL" \
+			"${SITE_SLUG}" "${CFG_SPOKE_NO_INBOUND:-false}" "${CFG_SPOKE_PUBLIC_HOST:-}"; then
 		die "site join failed — check the master URL + site join key (mint one on the master's Site Join Keys card)."
 	fi
 else
