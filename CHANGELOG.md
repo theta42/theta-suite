@@ -10,6 +10,14 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [theta-agent](https://github.com/theta42/theta-agent/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v3.20.2] - 2026-08-17
+
+  sso-manager-node  v2.23.1 -> v2.23.2
+
+- **OpenLDAP Container Startup Fix**:
+  - Removed duplicate `SERVER_ID_PLACEHOLDER` in `docker-entrypoint.sh` template that remained unreplaced when `LDAP_SERVER_ID` was set, resolving `slaptest` conversion failure during container boot.
+  - Expose `/var/lib/ldap/slapd.log` directly to container stderr on startup failure so any OpenLDAP initialization issues are immediately visible in `docker logs`.
+
 ## [v3.20.1] - 2026-08-17
 
   sso-manager-node  v2.23.0 -> v2.23.1
