@@ -10,6 +10,19 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [theta-agent](https://github.com/theta42/theta-agent/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v3.20.0] - 2026-08-17
+
+  sso-manager-node  v2.22.2 -> v2.23.0
+
+- **Multi-Site Architecture: Pragmatic Hub & Spoke with Transparent Write-Forwarding**:
+  - **Transparent Write-Forwarding**: Spoke nodes now transparently reverse-proxy mutating API write operations (`POST`, `PUT`, `PATCH`, `DELETE` on `/api/*`) upstream to the Master directory with full user context (`X-Forwarded-User`), client IP, and spoke site metadata. Reads serve locally at edge cache speed.
+  - **Offline Resilience**: If the Master is unreachable during a write operation, the spoke cleanly returns HTTP 503 indicating read-only offline mode, while local reads, SSSD auth, and DNS continue uninterrupted.
+  - **OpenBao Shared Secrets Sync**: `POST /api/site/export` dumps shared integration credentials (`secret/integrations/*`), plugin configs, and resource secrets from OpenBao; spokes deep-merge them into their local OpenBao vault via `@simpleworkjs/bao-conf` for complete disaster recovery parity.
+  - **Enrolled Agent Fleet Replication**: Enrolled `Agent` records replicate from Master to Spokes, providing cluster-wide fleet visibility across all nodes.
+  - **Spoke Identity & Master Directory Auto-Provisioning**: Spoke joins preserve their own unique `siteSlug`, and the master auto-provisions a `Resource` of `kind: 'site'` on spoke registration, ensuring the multi-site tree appears everywhere.
+  - **OpenLDAP Multi-Master Replication (MMR) & TLS Handshake**: Always loads `syncprov` overlay for runtime dynamic replication; configured `tls_reqcert=never` on syncrepl connections to accept cluster self-signed TLS certificates.
+  - **Installer & Configuration Updates**: `setup.sh` strictly enforces `CFG_SITE_NAME` on spokes; fixed HTTP vs HTTPS scheme propagation in `site-join.js`; removed legacy MMR comments from `spoke.env.example`.
+
 ## [v3.19.0] - 2026-08-14
 
   sso-manager-node  v2.22.1 -> v2.22.2
