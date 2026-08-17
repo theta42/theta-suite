@@ -10,6 +10,15 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [theta-agent](https://github.com/theta42/theta-agent/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v3.20.1] - 2026-08-17
+
+  sso-manager-node  v2.23.0 -> v2.23.1
+
+- **Spoke Write Proxy Caller Resolution & Onboarding Fixes**:
+  - `spoke_write_proxy` middleware now resolves the local session (`auth-token`) or Bearer PAT before proxying mutating API calls upstream to the Master, properly setting `X-Forwarded-User` and eliminating 401 Unauthorized errors during spoke onboarding (`POST /api/user/accept-tos`, `PUT /api/user/:uid`, `PUT /api/user/password`).
+  - Added support for verifying spoke proxy requests via `SiteSpoke.pushToken` in addition to `SiteJoinKey`.
+  - Added cluster-wide synchronization for `UserVerification` records so TOS acceptance and onboarding statuses sync across all nodes.
+
 ## [v3.20.0] - 2026-08-17
 
   sso-manager-node  v2.22.2 -> v2.23.0
