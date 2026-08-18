@@ -1319,6 +1319,34 @@ CFG_SITE_NAME="${CFG_SITE_NAME:-local}"
 SITE_SLUG="${SITE_SLUG:-site-$(echo "$CFG_SITE_NAME" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+|-+$//g')}"
 export SITE_SLUG
 
+# ── Spoke self URL ────────────────────────────────────────────────────────────
+# The address this site registers itself under on the master. Derived ONCE here
+# and used by every multi-site step below (join, relay registration, LDAP
+# replication registration).
+#
+# It has to be one value. The master's spoke registry is keyed on this exact
+# string, so when the steps disagreed -- the join used http:// under
+# CFG_CREATE_ALL_HTTP=1 (which spoke.env.example now defaults to) while the
+# relay and LDAP steps hardcoded https:// -- one site produced two registry
+# rows with two different LDAP ServerIDs and two different push tokens, and
+# `GET /api/site/ldap-peers` answered "this endpoint is not a registered spoke"
+# for the one that actually joined. If a prior run already registered under
+# some address, that address wins: re-registering under a new one would fork
+# the row all over again.
+SPOKE_SELF_SCHEME="https"
+[[ "${CFG_CREATE_ALL_HTTP:-0}" == "1" ]] && SPOKE_SELF_SCHEME="http"
+SPOKE_SELF_URL="${SPOKE_SELF_SCHEME}://${CFG_SSO_HOST}"
+if [[ -f "$CONFIG_DIR/site.json" ]]; then
+	# fs.readFileSync, not require(): `node -e` resolves a relative require()
+	# against the module path rather than the cwd, and CONFIG_DIR is relative.
+	RECORDED_SELF_URL="$(node -e 'try{const fs=require("fs");process.stdout.write((JSON.parse(fs.readFileSync(process.argv[1],"utf8")).selfUrl)||"")}catch(e){}' "$CONFIG_DIR/site.json" 2>/dev/null || true)"
+	if [[ -n "$RECORDED_SELF_URL" && "$RECORDED_SELF_URL" != "$SPOKE_SELF_URL" ]]; then
+		warn "This site is registered with its master as ${RECORDED_SELF_URL}, not ${SPOKE_SELF_URL} — keeping the registered address so the master keeps one row for this site."
+		SPOKE_SELF_URL="$RECORDED_SELF_URL"
+	fi
+fi
+export SPOKE_SELF_URL
+
 info "Stack config:"
 info "  SSO host:      https://${SSO_HOST}"
 info "  Proxy host:    https://${PROXY_HOST}"
@@ -1386,13 +1414,12 @@ if [[ -f "$CONFIG_DIR/site.json" ]]; then
 	info "Node is already configured as a spoke ($CONFIG_DIR/site.json exists) — keeping spoke configuration."
 elif [[ -n "${CFG_MASTER_DIRECTORY_URL:-}" && -n "${CFG_MASTER_DIRECTORY_JOIN_KEY:-}" ]]; then
 	info "Joining master site ${CFG_MASTER_DIRECTORY_URL} (CFG_MASTER_DIRECTORY_*)..."
-	# selfUrl (http(s)://$CFG_SSO_HOST, already derived above) registers this
-	# spoke for LIVE replication -- without it the join still succeeds, but
-	# the master has no way to reach this spoke to push resync pings, so it
-	# only ever gets the one-time snapshot from the moment it joined.
-	SPOKE_SELF_SCHEME="https"
-	[[ "${CFG_CREATE_ALL_HTTP:-0}" == "1" ]] && SPOKE_SELF_SCHEME="http"
-	SPOKE_SELF_URL="${SPOKE_SELF_SCHEME}://$CFG_SSO_HOST"
+	# selfUrl registers this spoke for LIVE replication -- without it the join
+	# still succeeds, but the master has no way to reach this spoke to push
+	# resync pings, so it only ever gets the one-time snapshot from the moment
+	# it joined. SPOKE_SELF_URL is derived once (see "Spoke self URL" above) and
+	# reused by every step below, because the master keys its spoke registry on
+	# this exact string.
 	if ! "${COMPOSE[@]}" exec -T sso-manager node /bootstrap/site-join.js \
 			"$CFG_MASTER_DIRECTORY_URL" "$CFG_MASTER_DIRECTORY_JOIN_KEY" "$SPOKE_SELF_URL" \
 			"${SITE_SLUG:-site-${CFG_SITE_NAME:-local}}" "${CFG_SPOKE_NO_INBOUND:-false}" "${CFG_SPOKE_PUBLIC_HOST:-}"; then
@@ -1608,7 +1635,7 @@ if [[ "${CFG_SPOKE_NO_INBOUND:-false}" == "true" ]]; then
 	else
 		info "Checking no-inbound relay registration (CFG_SPOKE_PUBLIC_HOST=${CFG_SPOKE_PUBLIC_HOST})..."
 		"${COMPOSE[@]}" exec -T sso-manager node /bootstrap/site-relay-register.js \
-			"https://$CFG_SSO_HOST" "$CFG_SPOKE_PUBLIC_HOST" || warn "relay registration did not complete — check: ${COMPOSE[*]} exec sso-manager node /bootstrap/site-relay-register.js https://$CFG_SSO_HOST $CFG_SPOKE_PUBLIC_HOST"
+			"$SPOKE_SELF_URL" "$CFG_SPOKE_PUBLIC_HOST" || warn "relay registration did not complete — check: ${COMPOSE[*]} exec sso-manager node /bootstrap/site-relay-register.js $SPOKE_SELF_URL $CFG_SPOKE_PUBLIC_HOST"
 	fi
 fi
 
@@ -1629,7 +1656,7 @@ if [[ "${CFG_LDAP_MMR_MANUAL:-false}" == "true" ]]; then
 	info "CFG_LDAP_MMR_MANUAL=true — skipping automatic LDAP replication config."
 	LDAP_REG_OUT=""
 else
-LDAP_REG_OUT=$("${COMPOSE[@]}" exec -T sso-manager node /bootstrap/site-ldap-register.js "https://$CFG_SSO_HOST" 2>&1) || warn "LDAP replication config check failed — check: ${COMPOSE[*]} exec sso-manager node /bootstrap/site-ldap-register.js https://$CFG_SSO_HOST"
+LDAP_REG_OUT=$("${COMPOSE[@]}" exec -T sso-manager node /bootstrap/site-ldap-register.js "$SPOKE_SELF_URL" 2>&1) || warn "LDAP replication config check failed — check: ${COMPOSE[*]} exec sso-manager node /bootstrap/site-ldap-register.js $SPOKE_SELF_URL"
 echo "$LDAP_REG_OUT" | sed 's/^/[setup] /'
 fi
 if echo "$LDAP_REG_OUT" | grep -q '^LDAP_CONFIG_CHANGED=yes'; then

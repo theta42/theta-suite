@@ -10,6 +10,70 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [theta-agent](https://github.com/theta42/theta-agent/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v3.21.0] - 2026-08-18
+
+  sso-manager-node  v2.23.3 -> v2.24.0
+
+- **Multi-Site Correctness Pass.** The hub-and-spoke work shipped in v3.20.0 had a
+  single root defect that disabled most of it, plus several independent ones found
+  alongside it. See
+  [theta-directory's changelog](https://github.com/theta42/theta-directory/blob/master/CHANGELOG.md)
+  for the per-endpoint detail; the operator-visible summary:
+  - **Live replication to spokes was dead.** The write proxy's path exemptions were
+    written against `/api/...` but matched against the mount-relative path Express
+    actually supplies, so nothing matched and the master's own resync ping was
+    forwarded straight back to the master. Every spoke sat on its join-time
+    snapshot.
+  - **The WireGuard roster was being corrupted.** Each spoke gateway's
+    `PUT /api/mesh/self` was forwarded to the master, where it overwrote the
+    *master's* roster row with that spoke's key and endpoint.
+  - **SSSD/agent auth could not work at a spoke.** `POST /api/v1/ldap/bind`,
+    `/search` and `/api/v1/agent/secrets` were forwarded with the caller's token
+    replaced by the cluster join key.
+  - **A spoke's own directory tree emptied out.** Every resync deleted every local
+    edge the master's export did not contain, and overwrote the spoke's own
+    `sso-manager`/site records with the master's — including clearing its own
+    `isCurrentSite`.
+  - **A spoke could break itself on restart.** The export carried
+    `secret/sso-manager/conf`, the master's own LDAP bind password and `jwtSecret`,
+    which the spoke merged over its local config at next boot.
+  - **A site join key could act as any user** on the master when paired with
+    `X-Forwarded-User`; only per-spoke push tokens are accepted now.
+- **`setup.sh`: one canonical spoke self-URL.** The join step used `http://` under
+  `CFG_CREATE_ALL_HTTP=1` (the `spoke.env.example` default since v3.18.1) while the
+  relay and LDAP-replication steps hardcoded `https://`. Since the master keys its
+  spoke registry on that exact string, one site produced two registry rows, two LDAP
+  ServerIDs and two push tokens, and `GET /api/site/ldap-peers` answered "this
+  endpoint is not a registered spoke". `SPOKE_SELF_URL` is now derived once and
+  reused; an address already recorded in `config/site.json` always wins.
+- **`bootstrap/site-relay-register.js` goes through the local directory.** It used to
+  POST the master's `/api/site/spokes` behind the app's back, which discarded the
+  push token the master handed back, never updated `config/site.json`, and forked the
+  registry whenever its endpoint string differed from the join's. It now calls this
+  node's own `POST /api/site/reregister`.
+
+- **The multi-site e2e now gates every PR.** `docker-compose.multisite-e2e.yml` (three real
+  containers: master + two spokes, driving the actual operator HTTP flow) had never been
+  in CI — `pr-tests.yml` ran jest only, which is how a defect this broad survived five
+  releases. It now runs as its own job and blocks the merge gate. Two of its own
+  assertions were stale in the same direction and were corrected.
+
+### Upgrading an existing cluster
+
+Re-run `./setup.sh` on the master first, then on each spoke. Two things worth
+checking afterwards, because this release stops the damage but cannot infer what the
+old code overwrote:
+
+1. **Duplicate spoke rows.** Directory → Multi-Site → Registered Spokes. If a site
+   appears twice (typically one `http://` and one `https://` row), remove the stale
+   one; its LDAP ServerID is freed and the syncrepl entry is dropped automatically.
+2. **Clobbered stack-service records.** On a spoke, check that `sso-manager` /
+   `proxy` / `openldap` / `openresty` / `jump-host` still carry *that site's* address
+   and that its own site resource still has "Current site" ticked. Where the old code
+   replaced them with the master's values, correct them once in the Directory UI —
+   from this release on they are marked locally-owned and replication leaves them
+   alone.
+
 ## [v3.20.5] - 2026-08-17
 
 - **Spoke Re-Run & Update Idempotency**:

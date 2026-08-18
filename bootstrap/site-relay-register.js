@@ -11,20 +11,33 @@
  * the same reason the site join key itself is minted/pasted by hand rather
  * than automated). This script is the follow-up: run it (setup.sh does, on
  * every run, when CFG_SPOKE_NO_INBOUND is set) once meshing is done, and it
- * discovers this jump-host's mesh IP and registers it with the master so
- * theta-proxy there can auto-create the relay route (see sso-manager-node's
+ * discovers this jump-host's mesh IP and registers it so theta-proxy on the
+ * master can auto-create the relay route (see sso-manager-node's
  * utils/proxy_client.js). Safe to run before meshing completes -- reports
  * "not meshed yet" and exits 0 so a re-run later just picks it up.
  *
  *   docker compose exec sso-manager node /bootstrap/site-relay-register.js \
  *       https://sso.this-site.example.com sso-branch2.master-domain.example.com
  *
+ * It goes through this node's OWN POST /api/site/reregister rather than
+ * POSTing the master's /api/site/spokes directly, which is what it used to do.
+ * Talking to the master behind the app's back had three consequences, all of
+ * which bit in practice:
+ *
+ *   * the push token the master hands back was read and thrown away, so a
+ *     re-registration that MINTED a new one left this node unable to accept the
+ *     master's resync pushes at all;
+ *   * /config/site.json was never updated, and the running app caches it, so
+ *     nothing here was visible to the process actually doing the replicating;
+ *   * the endpoint string had to match the one the join used byte for byte, or
+ *     the master's upsert-by-endpoint created a SECOND registry row for this
+ *     one site -- with a second LDAP ServerID, which quietly breaks MMR.
+ *
  * Self-contained (Node built-ins + global fetch), same rule as bootstrap.js
- * and site-join.js -- it does NOT require the SSO's internal models. It
- * reads this node's own spoke role from /config/site.json (written by
- * site-join.js) and logs into the LOCAL jump-host as its bootstrap-minted
- * local admin (/config/jump-secrets.js) to call jump-host's own
- * GET /api/mesh/self.
+ * and site-join.js -- it does NOT require the SSO's internal models. It reads
+ * this node's own spoke role from /config/site.json (written by site-join.js)
+ * and logs into the LOCAL jump-host as its bootstrap-minted local admin
+ * (/config/jump-secrets.js) to call jump-host's own GET /api/mesh/self.
  *
  * Output (stdout, KEY=VALUE for setup.sh): RELAY=<registered|not-meshed|not-a-spoke|skipped>.
  * Progress logs go to stderr.
@@ -35,6 +48,8 @@ const fs = require('fs');
 
 const SITE_CONFIG = '/config/site.json';
 const JUMP_SECRETS = '/config/jump-secrets.js';
+const SSO_SECRETS = '/config/sso-secrets.js';
+const SSO_INTERNAL = 'http://localhost:3001';
 // The gateway runs on the host now, not as a compose service, so `jump-host`
 // does not resolve from inside the container. setup.sh wires JUMP_INTERNAL_URL
 // to http://host.docker.internal:3002 (see docker-compose.yml's extra_hosts);
@@ -102,18 +117,36 @@ async function main() {
     console.log('RELAY=not-meshed');
     return;
   }
-  log(`Discovered mesh IP ${selfData.meshIp}. Registering with ${site.masterUrl}...`);
+  log(`Discovered mesh IP ${selfData.meshIp}. Re-registering with ${site.masterUrl} via the local directory...`);
 
-  const regRes = await fetch(`${site.masterUrl.replace(/\/+$/, '')}/api/site/spokes`, {
+  // Log in locally as the bootstrap admin, same as site-join.js.
+  const sso = require(SSO_SECRETS);
+  const adminUid = (sso.bootstrap && sso.bootstrap.adminUid) || 'admin';
+  const adminPass = (sso.bootstrap && sso.bootstrap.adminPass) || '';
+  const ssoLogin = await fetch(`${SSO_INTERNAL}/api/auth/login`, {
     method: 'POST',
-    headers: { Authorization: 'Bearer ' + site.masterJoinKey, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      endpoint: selfUrl,
-      siteSlug: site.siteSlug || '',
-      noInbound: true,
-      meshIp: selfData.meshIp,
-      publicHost,
-    }),
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ uid: adminUid, password: adminPass }),
+  });
+  if (!ssoLogin.ok) {
+    throw new Error(`local admin login failed (${ssoLogin.status}): ${await ssoLogin.text().catch(() => '')}`);
+  }
+  const { token } = await ssoLogin.json();
+  if (!token) throw new Error('local admin login returned no token');
+
+  // Prefer the endpoint this node already registered under, so a scheme or
+  // hostname difference between setup.sh invocations can never fork one site
+  // into two registry rows. The argument is the fallback for a node that
+  // joined before selfUrl was persisted.
+  const endpoint = site.selfUrl || selfUrl;
+  if (site.selfUrl && site.selfUrl !== selfUrl) {
+    log(`Using the endpoint already on file (${site.selfUrl}) rather than ${selfUrl}, so the master keeps one row for this site.`);
+  }
+
+  const regRes = await fetch(`${SSO_INTERNAL}/api/site/reregister`, {
+    method: 'POST',
+    headers: { 'auth-token': token, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ selfUrl: endpoint, noInbound: true, meshIp: selfData.meshIp, publicHost }),
   });
   const text = await regRes.text().catch(() => '');
   let data = null;
@@ -122,7 +155,8 @@ async function main() {
     throw new Error(`relay registration failed (${regRes.status}): ${(data && data.message) || text}`);
   }
 
-  log(`Relay: ${(data.relay && data.relay.note) || 'registered'}`);
+  log(`Relay: ${(data && data.relay && data.relay.note) || 'registered'}`);
+  log(`Live replication: ${(data && data.live) ? 'yes' : 'no'}`);
   console.log('RELAY=registered');
 }
 
