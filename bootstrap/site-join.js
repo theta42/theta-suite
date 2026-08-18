@@ -24,6 +24,7 @@
  */
 'use strict';
 
+const fs  = require('fs');
 const sso = require('/config/sso-secrets.js');
 
 const ADMIN_UID       = (sso.bootstrap && sso.bootstrap.adminUid) || 'admin';
@@ -43,6 +44,18 @@ async function main() {
   if (!masterUrl || !joinKey) {
     throw new Error('usage: node /bootstrap/site-join.js <masterUrl> <joinKey> [selfUrl] [siteSlug] [noInbound] [publicHost]');
   }
+
+  // 0. If /config/site.json already exists and records this node as a spoke, no-op.
+  try {
+    if (fs.existsSync('/config/site.json')) {
+      const existing = JSON.parse(fs.readFileSync('/config/site.json', 'utf8'));
+      if (existing && existing.isMaster === false) {
+        log('Already a spoke (/config/site.json exists) — nothing to do.');
+        console.log(`JOINED=already SITE_SLUG=${existing.siteSlug || siteSlug || ''}`);
+        return;
+      }
+    }
+  } catch (_) {}
 
   // 1. Login as the bootstrap admin (validates the password end-to-end).
   const loginRes = await fetch(`${SSO_INTERNAL}/api/auth/login`, {
@@ -79,6 +92,24 @@ async function main() {
     // A node that already joined is a no-op, not a failure (idempotent setup).
     if (res.status === 400 && data && /already a spoke/i.test(data.message || '')) {
       log('Already a spoke — nothing to do.');
+      console.log('JOINED=already');
+      return;
+    }
+    // A directory that already contains users/agents (e.g. from previous join or sync).
+    if (res.status === 409 && data && /already has users/i.test(data.message || '')) {
+      log('Directory already has users/agents — keeping existing spoke configuration.');
+      try {
+        const file = '/config/site.json';
+        if (!fs.existsSync(file)) {
+          fs.writeFileSync(file, JSON.stringify({
+            isMaster: false,
+            masterUrl,
+            siteSlug: siteSlug || 'site-spoke',
+            masterJoinKey: joinKey,
+            ...(selfUrl ? { selfUrl } : {})
+          }, null, 2) + '\n');
+        }
+      } catch (_) {}
       console.log('JOINED=already');
       return;
     }

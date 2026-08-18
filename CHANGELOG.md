@@ -10,6 +10,12 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [theta-agent](https://github.com/theta42/theta-agent/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v3.20.5] - 2026-08-17
+
+- **Spoke Re-Run & Update Idempotency**:
+  - `setup.sh` now detects existing `$CONFIG_DIR/site.json` and skips `site-join.js` on update re-runs.
+  - `bootstrap/site-join.js` checks `/config/site.json` before attempting join and gracefully handles 409 responses if users/agents are already present from previous synchronization, preventing update crashes.
+
 ## [v3.20.4] - 2026-08-17
 
   sso-manager-node  v2.23.2 -> v2.23.3
