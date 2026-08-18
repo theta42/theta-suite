@@ -1382,7 +1382,9 @@ fi
 # reads spoke.env once and ignores it once ./config/ exists, so an already-running
 # directory can never be merged into a master's. Idempotent — a node that already
 # joined reports "already a spoke" and setup continues.
-if [[ -n "${CFG_MASTER_DIRECTORY_URL:-}" && -n "${CFG_MASTER_DIRECTORY_JOIN_KEY:-}" ]]; then
+if [[ -f "$CONFIG_DIR/site.json" ]]; then
+	info "Node is already configured as a spoke ($CONFIG_DIR/site.json exists) — keeping spoke configuration."
+elif [[ -n "${CFG_MASTER_DIRECTORY_URL:-}" && -n "${CFG_MASTER_DIRECTORY_JOIN_KEY:-}" ]]; then
 	info "Joining master site ${CFG_MASTER_DIRECTORY_URL} (CFG_MASTER_DIRECTORY_*)..."
 	# selfUrl (http(s)://$CFG_SSO_HOST, already derived above) registers this
 	# spoke for LIVE replication -- without it the join still succeeds, but
