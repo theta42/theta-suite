@@ -1312,8 +1312,12 @@ ADMIN_UID="$(cfgval ADMIN_UID)"
 # five places below that still reference it died on `set -u` with "unbound
 # variable" partway through an otherwise-fine run. SSO_HOST is read from the
 # live config every time, so fall back to it (and then to the secrets file)
-# rather than making each caller remember.
+# rather than making each caller remember. Same for CFG_SITE_NAME and SITE_SLUG.
 CFG_SSO_HOST="${CFG_SSO_HOST:-${SSO_HOST:-$(sso_secrets_get ssoHost)}}"
+CFG_SITE_NAME="${CFG_SITE_NAME:-$(sso_secrets_get siteName)}"
+CFG_SITE_NAME="${CFG_SITE_NAME:-local}"
+SITE_SLUG="${SITE_SLUG:-site-$(echo "$CFG_SITE_NAME" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+|-+$//g')}"
+export SITE_SLUG
 
 info "Stack config:"
 info "  SSO host:      https://${SSO_HOST}"
@@ -1389,7 +1393,7 @@ if [[ -n "${CFG_MASTER_DIRECTORY_URL:-}" && -n "${CFG_MASTER_DIRECTORY_JOIN_KEY:
 	SPOKE_SELF_URL="${SPOKE_SELF_SCHEME}://$CFG_SSO_HOST"
 	if ! "${COMPOSE[@]}" exec -T sso-manager node /bootstrap/site-join.js \
 			"$CFG_MASTER_DIRECTORY_URL" "$CFG_MASTER_DIRECTORY_JOIN_KEY" "$SPOKE_SELF_URL" \
-			"${SITE_SLUG}" "${CFG_SPOKE_NO_INBOUND:-false}" "${CFG_SPOKE_PUBLIC_HOST:-}"; then
+			"${SITE_SLUG:-site-${CFG_SITE_NAME:-local}}" "${CFG_SPOKE_NO_INBOUND:-false}" "${CFG_SPOKE_PUBLIC_HOST:-}"; then
 		die "site join failed — check the master URL + site join key (mint one on the master's Site Join Keys card)."
 	fi
 else

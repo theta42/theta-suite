@@ -10,6 +10,11 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [theta-agent](https://github.com/theta42/theta-agent/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v3.20.3] - 2026-08-17
+
+- **Installer & Spoke Update Fix**:
+  - Resolved `SITE_SLUG: unbound variable` crash during re-runs of `setup.sh` on spoke nodes by restoring `CFG_SITE_NAME` and `SITE_SLUG` from `./config/sso-secrets.js` when `ensure_config` returns early, and adding safe fallback handling.
+
 ## [v3.20.2] - 2026-08-17
 
   sso-manager-node  v2.23.1 -> v2.23.2
