@@ -10,6 +10,14 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [theta-agent](https://github.com/theta42/theta-agent/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v3.20.4] - 2026-08-17
+
+  sso-manager-node  v2.23.2 -> v2.23.3
+
+- **Spoke Onboarding Synchronization & UI Flow**:
+  - `spoke_write_proxy` middleware now synchronously syncs local `UserVerification` records and flushes `User.clearCache()` upon receiving successful response from Master on `/api/user/accept-tos`, `/api/user/password`, and `/api/user/:uid`.
+  - Fixed `/onboarding` container visibility and added fresh `app.auth.loadUser(true)` state reloads upon completion of onboarding steps, preventing redirect loops between `/` and `/onboarding`.
+
 ## [v3.20.3] - 2026-08-17
 
 - **Installer & Spoke Update Fix**:
