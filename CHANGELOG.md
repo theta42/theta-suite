@@ -10,6 +10,18 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [theta-agent](https://github.com/theta42/theta-agent/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v3.21.3] - 2026-08-19
+
+  jump-host         v3.3.4  -> v3.3.5
+
+- **jump-host install no longer aborts when `JUMP_HOST` is unset.** v3.3.4's
+  `gateway.env` default `${JUMP_HOST}:${JUMP_WG_PORT:-51820}` referenced
+  `JUMP_HOST` under `set -u`, so a first `setup.sh` on a host without that
+  variable exported died with `JUMP_HOST: unbound variable` instead of
+  finishing the install. v3.3.5 defaults to an empty endpoint (the site
+  reaches out through the hub) when `JUMP_HOST` is unset. No orchestration
+  changes in this repo.
+
 ## [v3.21.2] - 2026-08-19
 
   sso-manager-node  v2.24.1 -> v2.24.2
