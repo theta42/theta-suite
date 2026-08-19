@@ -84,30 +84,22 @@ async function main() {
     return;
   }
   const jumpSecrets = require(JUMP_SECRETS);
-  const jumpAdminUser = (jumpSecrets.auth && jumpSecrets.auth.adminUsers && jumpSecrets.auth.adminUsers[0]) || 'jumpadmin';
-  const jumpAdminPass = (jumpSecrets.auth && jumpSecrets.auth.localAdminPass) || '';
-  if (!jumpAdminPass) {
-    log('jump-secrets.js has no local admin password. Skipping.');
+  // Use the directory API token the bootstrap minted for the gateway, rather
+  // than the local admin password. The local admin account may be unset or
+  // differ from jump-secrets.js, while /api/mesh/self only requires a valid
+  // API token (jmp_ PAT or directory sso_ token).
+  const jumpToken = (jumpSecrets.sso && jumpSecrets.sso.apiToken)
+    || (jumpSecrets.auth && jumpSecrets.auth.apiToken)
+    || '';
+  if (!jumpToken) {
+    log('jump-secrets.js has no API token (sso.apiToken or auth.apiToken). Skipping.');
     console.log('RELAY=skipped');
     return;
   }
 
-  const loginRes = await fetch(`${JUMP_INTERNAL}/api/auth/login`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    // jump-host's login route (@simpleworkjs/oidc-client's shared router)
-    // expects `username`, not `uid` -- unlike sso-manager-node's own
-    // /api/auth/login (see site-join.js). Confirmed against a real running
-    // jump-host container; `uid` here just silently 401s.
-    body: JSON.stringify({ username: jumpAdminUser, password: jumpAdminPass }),
+  const selfRes = await fetch(`${JUMP_INTERNAL}/api/mesh/self`, {
+    headers: { Authorization: 'Bearer ' + jumpToken }
   });
-  if (!loginRes.ok) {
-    throw new Error(`jump-host admin login failed (${loginRes.status}): ${await loginRes.text().catch(() => '')}`);
-  }
-  const { token: jumpToken } = await loginRes.json();
-  if (!jumpToken) throw new Error('jump-host login returned no token');
-
-  const selfRes = await fetch(`${JUMP_INTERNAL}/api/mesh/self`, { headers: { 'auth-token': jumpToken } });
   if (!selfRes.ok) {
     throw new Error(`jump-host mesh self-lookup failed (${selfRes.status}): ${await selfRes.text().catch(() => '')}`);
   }

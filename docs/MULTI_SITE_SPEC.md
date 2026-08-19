@@ -151,6 +151,8 @@ No public IP exists, so *any* external access must go through the master:
 2. Master **terminates TLS** for that hostname and relays to the spoke over the WG tunnel — both `theta-proxy` (any site-hosted web app) and `theta-gateway` (SSH jump) traffic relay this way, not just SSO.
 3. Terminating at the master (rather than SNI passthrough) is fine here specifically because master↔spoke already rides an encrypted WG tunnel — there's no unencrypted hop being introduced.
 
+> **Prerequisite for the relay to actually carry traffic:** the master's `theta-proxy` container must have a route for `10.0.0.0/8` via the host's `theta-gateway` interface. On most Linux Docker hosts this route is NOT present automatically; it is installed by `theta-gateway` on the *host* network namespace, but containers start in their own namespace. `setup.sh` does not currently verify this. If the route is missing, the proxy will return 502s for all spoke-relayed hostnames. Add it manually on the master host (outside any container) with: `ip route add 10.0.0.0/8 dev <host-wan-or-lan-iface>` or, if the gateway already publishes the tunnel: `ip route add 10.0.0.0/8 via <gateway-peer-ip> dev wg-mesh`.
+
 ### 5.3 Local-Direct Resolution (Skip the Relay On-LAN)
 
 A client physically on a no-inbound spoke's LAN would otherwise hairpin out to the master and back to reach its own local site. Solved via **mDNS local-service-discovery**, not directory-side network topology:
