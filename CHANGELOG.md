@@ -10,6 +10,34 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [theta-agent](https://github.com/theta42/theta-agent/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v3.21.2] - 2026-08-19
+
+  sso-manager-node  v2.24.1 -> v2.24.2
+  jump-host         v3.3.3  -> v3.3.4
+  theta-agent       v2.8.1  -> v2.8.2
+
+- **OpenLDAP replication is converged live, so `setup.sh` no longer restarts
+  `sso-manager` on topology changes.** theta-directory v2.24.2 applies
+  ServerID, syncrepl peers, and mirrormode via `cn=config` at runtime. The
+  `site-ldap-register.js` step still persists the static `ldap-replication.env`
+  seed for the next cold start, but a new spoke joining, a promotion, or a
+  re-registration no longer needs a container restart. `setup.sh` and
+  `master.env.example` comments updated to reflect this.
+- **URL validation in `bootstrap/site-join.js`.** Invalid `masterUrl` or
+  `selfUrl` values now fail immediately instead of producing a confusing
+  fetch error or a half-join. The "already a spoke" idempotent soft-success
+  path now accepts both HTTP 400 and 409 from the directory.
+- **`site-promote` instruction updated.** The response no longer tells the
+  operator to re-run `setup.sh` for replication to take effect; it clarifies
+  that live convergence handles it and a re-run only re-seeds the static file.
+- **jump-host install script defaults `THETA_MESH_ENDPOINT`.**
+  `install.sh` writes `THETA_MESH_ENDPOINT=${JUMP_HOST}:${JUMP_WG_PORT:-51820}`
+  into the gateway env file instead of leaving it blank, so a site with a
+  public hostname is dialable by peers without a manual edit.
+- **theta-agent local-discovery improvements.** v2.8.2 adds a `local_discovery`
+  toggle in `agent.yml` and only writes the managed `/etc/hosts` block when
+  the discovered LAN IP actually differs from normal DNS resolution.
+
 ## [v3.21.1] - 2026-08-19
 
   sso-manager-node  v2.24.0 -> v2.24.1

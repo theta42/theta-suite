@@ -1694,9 +1694,13 @@ fi
 # and derives every site's LDAP URL automatically (bootstrap/
 # site-ldap-register.js) instead of an operator hand-maintaining
 # LDAP_SERVER_ID/LDAP_REPLICATION_HOSTS. Runs on every invocation -- both
-# master (its peer list grows as spokes join) and spoke -- and restarts
-# sso-manager only when the computed config actually changed, since
-# OpenLDAP's static slapd.conf is only read at process start.
+# master (its peer list grows as spokes join) and spoke.
+#
+# The persisted env file seeds OpenLDAP's static slapd.conf on process start.
+# Live convergence is handled at runtime by the Directory app via cn=config
+# (utils/ldap_reconcile.js + utils/ldap_runtime_config.js), so a config change
+# here does NOT restart sso-manager anymore. Re-running setup.sh is still
+# useful because it re-persists the current peer list for the next cold start.
 #
 # CFG_LDAP_MMR_MANUAL=true skips this entirely -- every fresh install starts
 # as a master, so without this escape hatch an operator's own hand-set
@@ -1709,18 +1713,10 @@ else
 LDAP_REG_OUT=$("${COMPOSE[@]}" exec -T sso-manager node /bootstrap/site-ldap-register.js "$SPOKE_SELF_URL" 2>&1) || warn "LDAP replication config check failed — check: ${COMPOSE[*]} exec sso-manager node /bootstrap/site-ldap-register.js $SPOKE_SELF_URL"
 echo "$LDAP_REG_OUT" | sed 's/^/[setup] /'
 fi
+# Live convergence means no restart is required; the env file is just a seed
+# for the next cold start. Drift is reported on the Multi-Site modal.
 if echo "$LDAP_REG_OUT" | grep -q '^LDAP_CONFIG_CHANGED=yes'; then
-	info "LDAP replication config changed — restarting sso-manager to apply it..."
-	[[ -f "$CONFIG_DIR/ldap-replication.env" ]] && parse_kv_file "$CONFIG_DIR/ldap-replication.env"
-	"${COMPOSE[@]}" up -d --force-recreate sso-manager
-	info "Waiting for sso-manager to be healthy again..."
-	for i in $(seq 1 60); do
-		if docker exec sso-manager wget -q -O- http://localhost:3001/health >/dev/null 2>&1; then
-			info "sso-manager is healthy."; break
-		fi
-		if (( i == 60 )); then warn "sso-manager did not become healthy in 120s after the LDAP config restart. Check: ${COMPOSE[*]} logs sso-manager"; break; fi
-		sleep 2
-	done
+	info "LDAP replication config changed — persisted for next start; live convergence will apply it without a restart."
 fi
 
 # ── 7c. Install theta-agent on the host ──────────────────────────────────────

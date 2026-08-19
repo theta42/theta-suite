@@ -45,7 +45,30 @@ async function main() {
     throw new Error('usage: node /bootstrap/site-join.js <masterUrl> <joinKey> [selfUrl] [siteSlug] [noInbound] [publicHost]');
   }
 
+  // Validate the master URL up front so a typo fails immediately instead of
+  // half-joining or producing a confusing fetch error.
+  try {
+    const parsed = new URL(masterUrl);
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+      throw new Error('protocol must be http: or https:');
+    }
+  } catch (e) {
+    throw new Error(`invalid masterUrl "${masterUrl}": ${e.message}`);
+  }
+  if (selfUrl) {
+    try {
+      const parsed = new URL(selfUrl);
+      if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+        throw new Error('protocol must be http: or https:');
+      }
+    } catch (e) {
+      throw new Error(`invalid selfUrl "${selfUrl}": ${e.message}`);
+    }
+  }
+
   // 0. If /config/site.json already exists and records this node as a spoke, no-op.
+  // We intentionally still validate masterUrl/selfUrl above, so a re-run with
+  // a bogus command line fails fast instead of being swallowed by this no-op.
   try {
     if (fs.existsSync('/config/site.json')) {
       const existing = JSON.parse(fs.readFileSync('/config/site.json', 'utf8'));
@@ -90,28 +113,19 @@ async function main() {
   try { data = JSON.parse(text); } catch (e) { /* not JSON */ }
   if (!res.ok) {
     // A node that already joined is a no-op, not a failure (idempotent setup).
-    if (res.status === 400 && data && /already a spoke/i.test(data.message || '')) {
+    // The master may return this as either 400 or 409 depending on where it
+    // detects the already-spoke state, so accept both.
+    if ((res.status === 400 || res.status === 409) && data && /already a spoke/i.test(data.message || '')) {
       log('Already a spoke — nothing to do.');
       console.log('JOINED=already');
       return;
     }
-    // A directory that already contains users/agents (e.g. from previous join or sync).
+    // A directory that already contains users/agents is a hard failure:
+    // joining merges the master's directory into THIS node, so any local
+    // real state would either be overwritten or create a divergent hybrid.
+    // The only safe recovery is to re-provision this spoke from scratch.
     if (res.status === 409 && data && /already has users/i.test(data.message || '')) {
-      log('Directory already has users/agents — keeping existing spoke configuration.');
-      try {
-        const file = '/config/site.json';
-        if (!fs.existsSync(file)) {
-          fs.writeFileSync(file, JSON.stringify({
-            isMaster: false,
-            masterUrl,
-            siteSlug: siteSlug || 'site-spoke',
-            masterJoinKey: joinKey,
-            ...(selfUrl ? { selfUrl } : {})
-          }, null, 2) + '\n');
-        }
-      } catch (_) {}
-      console.log('JOINED=already');
-      return;
+      throw new Error(`join refused by master: ${(data && data.message) || text}. Re-provision this spoke from a fresh install — its local directory already has users/agents.`);
     }
     throw new Error(`join failed (${res.status}): ${(data && data.message) || text}`);
   }
