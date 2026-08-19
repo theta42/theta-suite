@@ -10,6 +10,53 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [theta-agent](https://github.com/theta42/theta-agent/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v3.21.1] - 2026-08-19
+
+  sso-manager-node  v2.24.0 -> v2.24.1
+  jump-host         v3.3.2  -> v3.3.3
+
+Fixes three defects found on a live two-site deployment.
+
+- **Both sites came up as master, and nothing said so.** Two stacked bugs:
+  theta-directory v2.24.0 created `config/site.json` at boot on a node that had
+  never joined anything (fixed in v2.24.1), and `setup.sh` treated the mere
+  *existence* of that file as "this node is already a spoke" and skipped the
+  join step. `site.json` is the node's general multi-site config — the app
+  writes it for reasons unrelated to joining — so the guard now reads the ROLE
+  out of it (`isMaster: false`) instead. Either half alone would still have
+  broken this.
+- **A spoke bring-up that does not actually join is now fatal.** After the join
+  was skipped, `setup.sh` carried on and stood the node up as a fully
+  independent master. It now verifies the join actually took before continuing,
+  and refuses to bring a node up standalone when `spoke.env` is present but
+  there is no join credential and no existing join. Silently becoming a second
+  master is the one outcome this flow must never produce.
+- **`JUMP_HOST` was derived by string surgery on `SSO_HOST`.**
+  `jump.${SSO_HOST#sso.}` strips a *literal* `sso.` prefix, so an operator who
+  sets `CFG_SSO_HOST=sso-master.suite.example.com` got
+  `jump.sso-master.suite.example.com` — a name that does not resolve, with a
+  dead `theta-proxy` Host record pointing at it. Now derived from
+  `${CFG_PUBLIC_DOMAIN:-…}` the same way `SSO_HOST` and `PROXY_HOST` already
+  are, falling back to dropping the first label of `SSO_HOST` on re-runs (where
+  `CFG_PUBLIC_DOMAIN` is out of scope), which is correct for `sso.x.y` and
+  `sso-master.x.y` alike.
+- **jump-host's "WireGuard" nav item 404'd** since the mesh-v2 rewrite deleted
+  that page in favour of `/mesh`. Fixed in jump-host v3.3.3, with a test that
+  every nav href has a route and a view.
+
+### Note for anyone who ran v3.21.0
+
+A spoke that came up as a master this way also enrolled its own theta-agent
+(step 7c), and the join guard refuses any directory that already has agents —
+so re-running `setup.sh` will not rescue it even with this fix. Rebuild the
+spoke, or remove its agent enrolment first, then re-run.
+
+### Upgrading
+
+An existing install whose jump host was registered under the old derived name
+keeps a dead `theta-proxy` Host record for it; remove that record by hand if
+you want it gone. Nothing removes proxy routes automatically.
+
 ## [v3.21.0] - 2026-08-18
 
   sso-manager-node  v2.23.3 -> v2.24.0
