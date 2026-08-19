@@ -10,6 +10,19 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [theta-agent](https://github.com/theta42/theta-agent/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v3.21.4] - 2026-08-19
+
+  sso-manager-node  v2.24.2 -> v2.24.3
+
+- **A fresh bootstrapped spoke can join a master again.** theta-directory
+  v2.24.2's fresh-install guard rejected any directory holding OAuth clients
+  or plugin instances, but the bootstrap seeds the stack's own `theta-proxy` /
+  `theta-jump` OAuth clients and a `docker-local` discovery plugin on every
+  install. A brand new spoke therefore always failed to join ("This directory
+  already has users, agents, OAuth clients..."). v2.24.3 ignores those
+  well-known bootstrap seeds and only refuses when operator-created clients or
+  plugins are present. No orchestration changes in this repo.
+
 ## [v3.21.3] - 2026-08-19
 
   jump-host         v3.3.4  -> v3.3.5
