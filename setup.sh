@@ -1410,8 +1410,27 @@ fi
 # reads spoke.env once and ignores it once ./config/ exists, so an already-running
 # directory can never be merged into a master's. Idempotent — a node that already
 # joined reports "already a spoke" and setup continues.
+# "Already joined" is a ROLE, read out of site.json -- not the mere existence of
+# the file.
+#
+# site.json is the node's general multi-site config, and the app writes it for
+# reasons that have nothing to do with joining (v2.24.0's replication reconciler
+# persisted this node's LDAP ServerID into it at boot, on every node including a
+# fresh one). Treating the file's presence as "this is a spoke" therefore meant
+# ANY such write, landing before this step, silently skipped the join -- and the
+# node carried on and brought itself up as a second master. That is exactly what
+# happened: two sites, both isMaster:true, neither aware of the other, with the
+# master's join key showing use_count 0.
+SITE_ALREADY_JOINED=0
 if [[ -f "$CONFIG_DIR/site.json" ]]; then
-	info "Node is already configured as a spoke ($CONFIG_DIR/site.json exists) — keeping spoke configuration."
+	if node -e 'const fs=require("fs");let j={};try{j=JSON.parse(fs.readFileSync(process.argv[1],"utf8"))}catch(e){process.exit(1)}process.exit(j.isMaster===false?0:1)' \
+			"$CONFIG_DIR/site.json" 2>/dev/null; then
+		SITE_ALREADY_JOINED=1
+	fi
+fi
+
+if (( SITE_ALREADY_JOINED )); then
+	info "Node is already joined to a master site ($CONFIG_DIR/site.json records isMaster:false) — keeping spoke configuration."
 elif [[ -n "${CFG_MASTER_DIRECTORY_URL:-}" && -n "${CFG_MASTER_DIRECTORY_JOIN_KEY:-}" ]]; then
 	info "Joining master site ${CFG_MASTER_DIRECTORY_URL} (CFG_MASTER_DIRECTORY_*)..."
 	# selfUrl registers this spoke for LIVE replication -- without it the join
@@ -1425,6 +1444,23 @@ elif [[ -n "${CFG_MASTER_DIRECTORY_URL:-}" && -n "${CFG_MASTER_DIRECTORY_JOIN_KE
 			"${SITE_SLUG:-site-${CFG_SITE_NAME:-local}}" "${CFG_SPOKE_NO_INBOUND:-false}" "${CFG_SPOKE_PUBLIC_HOST:-}"; then
 		die "site join failed — check the master URL + site join key (mint one on the master's Site Join Keys card)."
 	fi
+	# Confirm the join actually took, rather than trusting an exit status.
+	# site-join.js exits 0 on several "nothing to do" paths, and the one thing
+	# that must never happen on a spoke bring-up is continuing as if we had
+	# joined: the rest of this script then stands the node up as a fully
+	# independent master, and the operator finds out much later that two sites
+	# both believe they are the write authority.
+	if ! node -e 'const fs=require("fs");let j={};try{j=JSON.parse(fs.readFileSync(process.argv[1],"utf8"))}catch(e){process.exit(1)}process.exit(j.isMaster===false?0:1)' \
+			"$CONFIG_DIR/site.json" 2>/dev/null; then
+		die "site join reported success but $CONFIG_DIR/site.json does not record this node as a spoke. Refusing to continue and bring this node up as a second master. Check: ${COMPOSE[*]} logs sso-manager"
+	fi
+	info "Joined — this node is a spoke of ${CFG_MASTER_DIRECTORY_URL}."
+elif (( IS_SPOKE )); then
+	# spoke.env exists, so this node is meant to be a spoke, but there is no
+	# join credential to use and it is not already joined. Bringing it up
+	# standalone would create exactly the split-brain this file exists to
+	# prevent, so stop instead of continuing quietly.
+	die "./spoke.env is present but CFG_MASTER_DIRECTORY_URL/CFG_MASTER_DIRECTORY_JOIN_KEY are not set, and this node has not joined a master. Refusing to bring it up as a standalone master — set both in ./spoke.env (mint a key on the master: Directory → the Master Site modal → Site Join Keys → Mint key)."
 else
 	info "No CFG_MASTER_DIRECTORY_URL/CFG_MASTER_DIRECTORY_JOIN_KEY — running as a fresh master site."
 fi
@@ -1498,7 +1534,21 @@ echo "$HOSTS_OUT" | sed 's/^/[setup] /'
 # already wrote ./config/jump-secrets.js (minted API token + LDAP admin bind) and
 # mirrored it into OpenBao. Build/start the service, wait for its web /health,
 # and register its web UI hostname as a proxy Host so https://<JUMP_HOST> routes.
-JUMP_HOST="${CFG_JUMP_HOST:-jump.${SSO_HOST#sso.}}"
+# jump.<this site's web domain>, derived the same way SSO_HOST and PROXY_HOST
+# are (see ensure_config: `sso.${CFG_PUBLIC_DOMAIN:-$CFG_DOMAIN}`) rather than by
+# string-surgery on another hostname.
+#
+# This used to be `jump.${SSO_HOST#sso.}`, which strips a LITERAL `sso.` prefix.
+# An operator who sets CFG_SSO_HOST to anything else -- `sso-master.suite.example.com`,
+# say -- gets no strip at all, and the jump host is registered as
+# `jump.sso-master.suite.example.com`: a name that does not resolve, with a dead
+# theta-proxy Host record pointing at it. CFG_PUBLIC_DOMAIN is the site's web
+# namespace and is what the other two already use.
+#
+# On a re-run CFG_PUBLIC_DOMAIN is unset (ensure_config returns early once
+# ./config exists), so fall back to dropping the FIRST label of SSO_HOST, which
+# is correct for `sso.x.y` and `sso-master.x.y` alike.
+JUMP_HOST="${CFG_JUMP_HOST:-jump.${CFG_PUBLIC_DOMAIN:-${SSO_HOST#*.}}}"
 JUMP_GIT_COMMIT="$(git -C jump-host rev-parse --short HEAD 2>/dev/null || echo unknown)"
 export JUMP_GIT_COMMIT
 env_upsert JUMP_GIT_COMMIT "$JUMP_GIT_COMMIT"
