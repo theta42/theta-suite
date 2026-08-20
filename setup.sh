@@ -1450,9 +1450,23 @@ elif [[ -n "${CFG_MASTER_DIRECTORY_URL:-}" && -n "${CFG_MASTER_DIRECTORY_JOIN_KE
 	# joined: the rest of this script then stands the node up as a fully
 	# independent master, and the operator finds out much later that two sites
 	# both believe they are the write authority.
-	if ! node -e 'const fs=require("fs");let j={};try{j=JSON.parse(fs.readFileSync(process.argv[1],"utf8"))}catch(e){process.exit(1)}process.exit(j.isMaster===false?0:1)' \
-			"$CONFIG_DIR/site.json" 2>/dev/null; then
-		die "site join reported success but $CONFIG_DIR/site.json does not record this node as a spoke. Refusing to continue and bring this node up as a second master. Check: ${COMPOSE[*]} logs sso-manager"
+	#
+	# The authoritative copy is the one the running sso-manager container just
+	# wrote to /config/site.json. Host-side visibility can lag the container by
+	# a few seconds on bind-mount propagation, so poll inside the container for
+	# up to 15s before giving up.
+	JOIN_VERIFIED=0
+	for _ in $(seq 1 15); do
+		if "${COMPOSE[@]}" exec -T sso-manager node -e \
+				'const fs=require("fs");let j={};try{j=JSON.parse(fs.readFileSync("/config/site.json","utf8"))}catch(e){process.exit(1)}process.exit(j.isMaster===false?0:1)' \
+				2>/dev/null; then
+			JOIN_VERIFIED=1
+			break
+		fi
+		sleep 1
+	done
+	if (( ! JOIN_VERIFIED )); then
+		die "site join reported success but /config/site.json does not record this node as a spoke. Refusing to continue and bring this node up as a second master. Check: ${COMPOSE[*]} logs sso-manager"
 	fi
 	info "Joined — this node is a spoke of ${CFG_MASTER_DIRECTORY_URL}."
 elif (( IS_SPOKE )); then
