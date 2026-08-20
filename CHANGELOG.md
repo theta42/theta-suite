@@ -10,6 +10,18 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [theta-agent](https://github.com/theta42/theta-agent/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v3.21.5] - 2026-08-20
+
+  sso-manager-node  v2.24.3 -> v2.24.4
+  jump-host         v3.3.5  -> v3.3.6
+
+- **`package.json` versions now match their release tags.** Both
+  `sso-manager-node` (theta-directory) and `jump-host` report their running
+  version via `utils/build_info.js` (read from `package.json`), and both had
+  lagged behind the tags since v2.24.2 / v3.3.4 — so deployed instances
+  under-reported their version. This bump is pure metadata alignment; no code
+  changes. No orchestration changes in this repo.
+
 ## [v3.21.4] - 2026-08-19
 
   sso-manager-node  v2.24.2 -> v2.24.3
