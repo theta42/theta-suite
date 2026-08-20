@@ -7,7 +7,8 @@
  *
  * The master assigns each spoke a unique LDAP_SERVER_ID at join time (same
  * mechanism as jump-host's WireGuard mesh index) and derives every site's
- * LDAP URL from its already-known HTTPS endpoint -- see sso-manager-node's
+ * LDAP URL from its mesh address (ldap://10.<siteId>.0.2:389) -- replication
+ * rides the WireGuard tunnel, never the public internet. See sso-manager-node's
  * GET /api/site/ldap-peers (spoke-facing) and
  * GET /directory-admin/ldap-replication-config (master-local).
  *

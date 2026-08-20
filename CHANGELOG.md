@@ -10,6 +10,20 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [theta-agent](https://github.com/theta42/theta-agent/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v3.21.7] - 2026-08-20
+
+  sso-manager-node  v2.24.5 -> v2.24.6
+
+- **LDAP replication and live resync now ride the WireGuard mesh, never the
+  public internet.** theta-directory v2.24.6 derives every site's LDAP peer
+  URL from its mesh address (`ldap://10.<siteId>.0.2:389`, plain LDAP over the
+  tunnel) instead of its public hostname (`ldaps://<host>:636`). `GET
+  /api/site/ldap-peers` advertises the master's mesh address, and the resync
+  push prefers the mesh for every spoke with a ServerID. This is what was
+  breaking a fresh spoke that had no route to the master over the public
+  endpoint. `bootstrap/site-ldap-register.js` and `master.env.example` updated
+  to match. No orchestration changes in this repo.
+
 ## [v3.21.6] - 2026-08-20
 
   sso-manager-node  v2.24.4 -> v2.24.5
