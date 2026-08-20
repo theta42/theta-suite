@@ -10,6 +10,19 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [theta-agent](https://github.com/theta42/theta-agent/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v3.21.9] - 2026-08-20
+
+  sso-manager-node  v2.24.6 -> v2.24.7
+
+- **Spoke onboarding can now save date of birth.** On a spoke, the onboarding
+  form's `PUT /api/user/:uid` with `dateOfBirth` is forwarded to the master
+  (the authoritative LDAP writer). The master writes it, but the page
+  immediately reloads `/api/user/me` on the spoke and used to still see the
+  old value because LDAP syncrepl had not propagated back yet, leaving the
+  user stuck. The spoke write proxy now applies the forwarded `dateOfBirth`
+  update locally after the master accepts it, so the next read is correct
+  and onboarding completes.
+
 ## [v3.21.8] - 2026-08-20
 
 - **Spoke setup no longer aborts when the host has no Node installed.** The
