@@ -10,6 +10,18 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [theta-agent](https://github.com/theta42/theta-agent/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v3.21.8] - 2026-08-20
+
+- **Spoke setup no longer aborts when the host has no Node installed.** The
+  post-join verification in `setup.sh` ran `node -e` on the **host** to check
+  whether `/config/site.json` records `isMaster:false`. On a minimal spoke
+  (no Node on the host) that command silently failed, so `setup.sh` concluded
+  the join had not persisted and `die()`d before starting the proxy / jump-host.
+  The check now polls the **container** (where Node is guaranteed to exist),
+  so the same spoke bring-up completes end-to-end. This also removes a
+  container-to-host bind-mount propagation race that could occasionally trip
+  the old check even when Node was present.
+
 ## [v3.21.7] - 2026-08-20
 
   sso-manager-node  v2.24.5 -> v2.24.6
