@@ -10,6 +10,18 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [theta-agent](https://github.com/theta42/theta-agent/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v3.21.6] - 2026-08-20
+
+  sso-manager-node  v2.24.4 -> v2.24.5
+
+- **A fresh bootstrapped spoke can actually join a master now.** theta-directory
+  v2.24.3's fix was incomplete: it matched the seeded `docker-local` plugin
+  against its human `name` ("Local Docker daemon") instead of its discovery
+  `slug` (`docker-local`), so the guard still saw the seeded plugin as
+  operator-created state and refused every fresh join. v2.24.5 keys plugin
+  instances on `slug` (and OAuth clients on `name`), so a fresh install with
+  only the bootstrap seeds joins cleanly. No orchestration changes in this repo.
+
 ## [v3.21.5] - 2026-08-20
 
   sso-manager-node  v2.24.3 -> v2.24.4
