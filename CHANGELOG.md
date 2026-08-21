@@ -10,6 +10,15 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [theta-agent](https://github.com/theta42/theta-agent/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v3.21.13] - 2026-08-21
+
+  sso-manager-node  v2.24.10 -> v2.24.11
+
+- **Agent join key cross-site replication, automatic spoke fleet enrollment, and atomic OpenLDAP runtime configuration updates.**
+  - **Agent join key replication**: Added `toReplica()` method to `AgentJoinKey` and integrated `agentJoinKeys` into `/api/site/export` and `/api/site/resync`. Mutating operations on join keys (`POST /api/agent/join-keys`, revoke, delete) now trigger live resync push to spokes.
+  - **Spoke agent auto-enrollment**: Agents on spoke nodes can now authenticate and auto-enroll against join keys minted on the master directory without manual configuration or copying tokens between nodes.
+  - **Atomic OpenLDAP config updates**: Consolidated database attribute modifications (`olcSyncrepl` and `olcMirrorMode`) in `utils/ldap_runtime_config.js` into unified atomic LDIF modify operations, eliminating slapd locks and deadlocks during live replication topology convergence.
+
 ## [v3.21.12] - 2026-08-21
 
   sso-manager-node  v2.24.9 -> v2.24.10
