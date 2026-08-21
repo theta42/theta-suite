@@ -816,6 +816,18 @@ function writeProxyCreds(id, secret) {
 // no token just means no suggestions.
 const PROXY_TOKEN_NAME = 'theta-proxy';
 
+async function isApiTokenValid(tokenStr) {
+	if (!tokenStr || typeof tokenStr !== 'string' || !tokenStr.startsWith('sso_')) return false;
+	try {
+		const res = await fetch('http://localhost:3001/api/user/me', {
+			headers: { Authorization: 'Bearer ' + tokenStr }
+		});
+		return res.status === 200;
+	} catch (e) {
+		return false;
+	}
+}
+
 async function ensureProxyApiToken(token) {
 	const path = '/config/proxy-secrets.js';
 	let src;
@@ -825,9 +837,9 @@ async function ensureProxyApiToken(token) {
 		log(`  WARNING: cannot read ${path} to add an SSO API token (${e.message})`);
 		return;
 	}
-	// An `sso: { ... apiToken: 'sso_...' }` already present means we're done.
-	if (/apiToken:\s*['"]sso_[0-9a-f]{24}_[0-9a-f]{48}['"]/.test(src)) {
-		log('  proxy already has an SSO API token — keeping');
+	const m = src.match(/apiToken:\s*['"](sso_[0-9a-f]{24}_[0-9a-f]{48})['"]/);
+	if (m && (await isApiTokenValid(m[1]))) {
+		log('  proxy already has a valid SSO API token — keeping');
 		return;
 	}
 	if (!/\bsso:\s*\{/.test(src)) {
@@ -999,13 +1011,22 @@ module.exports = {
 // never get a chance to self-heal a missing directory link (see the "no
 // parent" bug this was written for).
 async function provisionJumpHost(token) {
-	if (jumpFileComplete()) {
-		log('Jump host: /config/jump-secrets.js already has API token + OIDC client — keeping.');
+	let existingToken = null;
+	try {
+		const src = fs.readFileSync(JUMP_SECRETS, 'utf8');
+		const m = src.match(/apiToken:\s*['"](sso_[0-9a-f]{24}_[0-9a-f]{48})['"]/);
+		if (m) existingToken = m[1];
+	} catch (_) {}
+
+	const tokenValid = existingToken && (await isApiTokenValid(existingToken));
+
+	if (jumpFileComplete() && tokenValid) {
+		log('Jump host: /config/jump-secrets.js already has valid API token + OIDC client — keeping.');
 		const clients = await listClients(token);
 		const existing = clients.find((c) => c.name === JUMP_CLIENT_NAME);
 		return existing ? existing.client_id : null;
 	}
-	const apiToken = await mintApiToken(token, JUMP_TOKEN_NAME);
+	const apiToken = tokenValid ? existingToken : await mintApiToken(token, JUMP_TOKEN_NAME);
 
 	// Mint (or reuse) the jump host's own OAuth client for web-UI SSO login.
 	const clients = await listClients(token);
