@@ -76,10 +76,12 @@ Consequence: `theta-agent` needs **no change** to support multi-site — it alre
 
 | Data | Mechanism | Direction |
 |---|---|---|
-| LDAP (users, groups) | OpenLDAP MMR syncrepl | master (write) → spokes (read-only edge cache) |
+| LDAP (users, groups) | OpenLDAP MMR syncrepl + live resync push fallback | master (write) → spokes (read-only edge cache) |
+| Personal Access Tokens (API tokens / PATs) | SQLite ORM model + live resync push | master (write) → spokes (read-only edge cache) |
+| Agent fleet & credentials | Agent model (`tokenHash`) + live resync push | master (write) → spokes (read-only edge cache) |
 | OpenBao shared secrets (agent-signing key, `secret/integrations/*`, `secret/plugins/*`) | Export / adoption via `@simpleworkjs/bao-conf` | master (write) → spokes (read-only edge cache) |
 | Directory catalog (Resources: hosts, apps, sites) | Existing catalog change events + live resync push | master (write) → spokes (read-only edge cache) |
-| Mutating API writes (User/host creation, edits) | **Transparent Write-Forwarding**: Spoke reverse-proxies mutating requests to master | spokes (forward) → master (authoritative commit) |
+| Mutating API writes (User/host/PAT/agent creation, edits) | **Transparent Write-Forwarding**: Spoke reverse-proxies mutating requests to master | spokes (forward) → master (authoritative commit) |
 | Audit log | Async batch worker, already speced (§6) | spokes → master |
 
 ### 2.2 Replication Delivery: Fire-and-Forget
@@ -292,6 +294,8 @@ See [`AGENT_LOCAL_DISCOVERY_SPEC.md`](./AGENT_LOCAL_DISCOVERY_SPEC.md) — split
 | One site, one registry row | **Fixed 2026-08-18.** The registry is keyed on the endpoint string, and three things disagreed about it: `setup.sh` joined with `http://` under `CFG_CREATE_ALL_HTTP=1` while its relay and LDAP steps hardcoded `https://`, and the UI's Re-register passed `window.location.origin`. One site therefore produced two rows, two LDAP ServerIDs and two push tokens, and `GET /api/site/ldap-peers` answered "not a registered spoke" for the one that had actually joined. `SPOKE_SELF_URL` is derived once in `setup.sh`, and a recorded endpoint always wins over a caller-supplied one (`replaceEndpoint: true` to move a site deliberately). |
 | No-inbound spoke, LDAP peer reachability | **Fixed 2026-08-18.** MMR peer URLs were derived from a spoke's public HTTP endpoint — which for a CGNAT site is by definition undialable, so syncrepl on every other node retried a dead host forever and that site's tree never converged. `ldapHostForSpoke()` dials such a spoke over the mesh, the same preference resync pushes already used. |
 | This node's own site id | **Fixed 2026-08-18.** `mesh_roster.localSiteId()` read the `slapd.conf` seed, which only carries whatever `LDAP_SERVER_ID` was in the container environment at boot — a value a spoke does not have until `setup.sh` is re-run AFTER joining, while `ldap_reconcile` had already converged the live `cn=config` on the assigned id. A freshly-joined spoke therefore published its gateway under the wrong site id (usually 1, the master's). The assigned id now rides back on `POST /api/site/spokes` and is persisted to `site.json`. |
+| API token (PAT) replication & spoke write forwarding | **Shipped 2026-08-20.** `ApiToken` was moved from non-replicated Redis into the replicated SQLite catalog, exported to spokes (with bcrypt hashes), and adopted on resync. Mutating `/api/api-token` requests on spokes forward to the master via `spoke_write_proxy.js`. Any site can authenticate an `sso_...` token locally. |
+| Live resync triggers across all mutations | **Shipped 2026-08-20.** User, group, API token, agent, and ToS mutations on the master now immediately fire live resync pushes (`utils/replicate_on_finish.js`), ensuring spokes synchronize over the HTTPS fallback even when OpenLDAP syncrepl over the WireGuard mesh is degraded. |
 
 ### TODO — what's actually left
 

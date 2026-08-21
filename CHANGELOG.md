@@ -10,6 +10,16 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [theta-agent](https://github.com/theta42/theta-agent/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v3.21.10] - 2026-08-20
+
+  sso-manager-node  v2.24.7 -> v2.24.8
+
+- **Multi-site sync resilience, replicated API tokens, and live resync triggers across all mutations.**
+  - Personal access tokens (`sso_...`) are now stored in the replicated SQLite catalog and forwarded upstream from spokes via `spoke_write_proxy.js`.
+  - Master fires live resync pushes across all mutations (users, groups, API tokens, agent enrollment/revocation/rotation, ToS), closing the window where newly minted PATs or enrolled agents were rejected at spokes.
+  - Spoke registration idempotency preserves `ldapServerId` and `pushToken` on endpoint change.
+  - Redirect-safe fetch manually follows HTTP→HTTPS 301/307 redirects while preserving POST body and Authorization headers.
+
 ## [v3.21.9] - 2026-08-20
 
   sso-manager-node  v2.24.6 -> v2.24.7
