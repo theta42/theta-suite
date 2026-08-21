@@ -10,6 +10,15 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [theta-agent](https://github.com/theta42/theta-agent/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v3.21.11] - 2026-08-20
+
+  sso-manager-node  v2.24.8 -> v2.24.9
+
+- **Multi-site discovery aggregation, cluster-wide agent fleet visibility & command dispatch, and bootstrap token self-healing.**
+  - **Discovery forwarding**: Spokes now forward inventory reconciliation reports (Proxmox, Docker, Nmap, iLO) upstream to the master directory (`POST /api/site/spokes/discovery-report`), enabling full cluster-wide visibility of all nodes, VMs, and containers.
+  - **Agent sync & command routing**: Theta agents connecting and self-enrolling on spokes now synchronize to the master (`POST /api/site/spokes/agent-report`), updating `last_seen` timestamps so agents anywhere in the cluster display as online. Admin commands sent to agents connected on other nodes are automatically routed cluster-wide.
+  - **Bootstrap token verification & OpenBao synchronization**: `bootstrap.js` now verifies existing proxy and jump host API tokens against `/api/user/me` before deciding to keep them, re-minting invalid tokens post-join. `setup.sh` runs post-join token verification and forces OpenBao synchronization for `proxy/conf` and `jump-host/conf` so gateways connect cleanly without 401 authentication failures.
+
 ## [v3.21.10] - 2026-08-20
 
   sso-manager-node  v2.24.7 -> v2.24.8

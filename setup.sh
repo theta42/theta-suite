@@ -1016,8 +1016,8 @@ ensure_token() {
 # (skipped if the path already exists). Fail-soft: a seed failure leaves the
 # app's file-mounted config as the fallback — boot is not blocked.
 seed_app_conf() {
-	local vault_path="$1" mod="$2"
-	if bao_run kv get "secret/${vault_path}" >/dev/null 2>&1; then
+	local vault_path="$1" mod="$2" force="${3:-0}"
+	if [[ "$force" != "1" ]] && bao_run kv get "secret/${vault_path}" >/dev/null 2>&1; then
 		info "  secret/${vault_path} already seeded — keeping."
 		return 0
 	fi
@@ -1479,6 +1479,24 @@ else
 	info "No CFG_MASTER_DIRECTORY_URL/CFG_MASTER_DIRECTORY_JOIN_KEY — running as a fresh master site."
 fi
 
+# Re-verify proxy & jump host tokens post-join on spokes so their tokens
+# are authenticated on the master and synchronized into OpenBao.
+if (( IS_SPOKE || SITE_ALREADY_JOINED )); then
+	info "Verifying post-join app tokens and OpenBao synchronization..."
+	"${COMPOSE[@]}" exec -T \
+		-e COMPOSE_PROJECT_NAME="$STACK_COMPOSE_PROJECT" \
+		-e STACK_HOST_NAME="$STACK_HOST_NAME" \
+		-e STACK_HOST_IP="$STACK_HOST_IP" \
+		-e STACK_HOST_MAC="$STACK_HOST_MAC" \
+		-e STACK_HOST_OS="$STACK_HOST_OS" \
+		-e STACK_HOST_KERNEL="$STACK_HOST_KERNEL" \
+		-e CFG_JUMP_HOST="${CFG_JUMP_HOST:-}" \
+		-e VAULT_ADDR=http://openbao:8200 \
+		-e VAULT_TOKEN="$VAULT_TOKEN" \
+		sso-manager node /bootstrap/bootstrap.js >/dev/null || true
+	seed_app_conf proxy/conf /config/proxy-secrets.js 1
+fi
+
 # ── 6. Start the proxy, wait for health ───────────────────────────────────────
 # PROXY_GIT_COMMIT was already resolved + exported above, before the combined
 # build step -- it has to be, since that's when docker actually reads it as a
@@ -1570,7 +1588,7 @@ env_upsert JUMP_GIT_COMMIT "$JUMP_GIT_COMMIT"
 # token + OAuth client into /config/jump-secrets.js at step 5). bootstrap also
 # writes this to OpenBao directly, so this is a fallback for when bootstrap's
 # jump provisioning warned-but-continued.
-seed_app_conf jump-host/conf /config/jump-secrets.js
+seed_app_conf jump-host/conf /config/jump-secrets.js 1
 
 # The gateway installs on the HOST, not as a compose service: it is a router,
 # and NETMAP of the physical LAN, MASQUERADE out the real uplink, and being the
