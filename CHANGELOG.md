@@ -10,6 +10,16 @@ orchestration code; see each submodule's own `CHANGELOG.md`
 [theta-agent](https://github.com/theta42/theta-agent/blob/master/CHANGELOG.md))
 for what changed inside the apps it composes.
 
+## [v3.21.12] - 2026-08-21
+
+  sso-manager-node  v2.24.9 -> v2.24.10
+
+- **Automated OpenLDAP multi-master replication credential adoption, mesh gateway addressing, and custom WireGuard port persistence.**
+  - **OpenLDAP MMR credential adoption**: `setup.sh` now automatically negotiates and adopts the cluster's `CFG_LDAP_ADMIN_PASS` from `POST /api/site/ping` when setting up a spoke with `spoke.env`, guaranteeing identical root OpenLDAP bind credentials across all cluster nodes out of the box.
+  - **Mesh gateway addressing**: Directory replication mesh hosts now align to gateway interface addresses (`10.<siteId>.0.1:389`), ensuring seamless syncrepl communication across the WireGuard mesh tunnel.
+  - **Gateway mesh listen port**: `setup.sh` persists `THETA_MESH_LISTEN_PORT` in `gateway.env` when non-default `JUMP_WG_PORT` is specified, ensuring `theta-gateway` binds to custom mesh ports.
+  - **Inter-site auth & LDAP fixes**: Spoke authentication accepts master-forwarded requests via `replicationPushToken`, scheme-agnostic endpoint matching handles reverse-proxy upgrades, and LDAP user creation attribute handling guards against empty protocol values and SMTP connection hangs.
+
 ## [v3.21.11] - 2026-08-20
 
   sso-manager-node  v2.24.8 -> v2.24.9

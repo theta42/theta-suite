@@ -637,24 +637,29 @@ BAOEOF
 	# the first second, instead of after a full local bootstrap (builds,
 	# generated secrets, OpenBao init, ...) only to hit a base-DN mismatch at
 	# the very last step.
-	if (( IS_SPOKE )) && [[ -z "$CFG_DOMAIN" && -z "$CFG_BASE_DN" ]]; then
+	if (( IS_SPOKE )); then
 		[[ -n "${CFG_MASTER_DIRECTORY_URL:-}" && -n "${CFG_MASTER_DIRECTORY_JOIN_KEY:-}" ]] \
 			|| die "spoke.env must set CFG_MASTER_DIRECTORY_URL and CFG_MASTER_DIRECTORY_JOIN_KEY (mint a key on the master: Directory -> the Master Site modal -> Site Join Keys -> Mint key)."
-		info "Fetching this cluster's LDAP domain from the master (${CFG_MASTER_DIRECTORY_URL})..."
+		info "Fetching this cluster's LDAP configuration from the master (${CFG_MASTER_DIRECTORY_URL})..."
 		MASTER_PING="$(curl -fsS -m 15 -X POST "${CFG_MASTER_DIRECTORY_URL%/}/api/site/ping" \
 			-H "Authorization: Bearer ${CFG_MASTER_DIRECTORY_JOIN_KEY}" -H 'Content-Type: application/json' -d '{}' 2>/dev/null)" \
-			|| die "Could not reach the master (${CFG_MASTER_DIRECTORY_URL}) to fetch its LDAP domain -- check CFG_MASTER_DIRECTORY_URL/CFG_MASTER_DIRECTORY_JOIN_KEY in spoke.env and that the master is reachable."
-		# `|| true`: under pipefail, grep finding no match makes the whole
-		# pipeline's exit status non-zero even though this is a plain
-		# assignment -- which would trip `set -e` right here, silently, before
-		# the explicit empty-check below ever gets to die() with a real
-		# message.
-		MASTER_BASE_DN="$(printf '%s' "$MASTER_PING" | grep -o '"baseDn"[[:space:]]*:[[:space:]]*"[^"]*"' | sed -E 's/.*:[[:space:]]*"([^"]*)".*/\1/' || true)"
-		[[ -n "$MASTER_BASE_DN" ]] \
-			|| die "The master responded but did not report a baseDn -- it may be running a theta-suite older than the release that added it to POST /api/site/ping. Update the master, or set CFG_DOMAIN in spoke.env manually as a workaround."
-		CFG_BASE_DN="$MASTER_BASE_DN"
-		CFG_DOMAIN="$(domain_from_dn "$MASTER_BASE_DN")"
-		info "Cluster LDAP domain: ${CFG_DOMAIN} (base DN: ${CFG_BASE_DN})"
+			|| die "Could not reach the master (${CFG_MASTER_DIRECTORY_URL}) to fetch its LDAP configuration -- check CFG_MASTER_DIRECTORY_URL/CFG_MASTER_DIRECTORY_JOIN_KEY in spoke.env and that the master is reachable."
+		
+		if [[ -z "$CFG_DOMAIN" && -z "$CFG_BASE_DN" ]]; then
+			MASTER_BASE_DN="$(printf '%s' "$MASTER_PING" | grep -o '"baseDn"[[:space:]]*:[[:space:]]*"[^"]*"' | sed -E 's/.*:[[:space:]]*"([^"]*)".*/\1/' || true)"
+			[[ -n "$MASTER_BASE_DN" ]] \
+				|| die "The master responded but did not report a baseDn -- it may be running a theta-suite older than the release that added it to POST /api/site/ping. Update the master, or set CFG_DOMAIN in spoke.env manually as a workaround."
+			CFG_BASE_DN="$MASTER_BASE_DN"
+			CFG_DOMAIN="$(domain_from_dn "$MASTER_BASE_DN")"
+			info "Cluster LDAP domain: ${CFG_DOMAIN} (base DN: ${CFG_BASE_DN})"
+		fi
+		if [[ -z "$CFG_LDAP_ADMIN_PASS" ]]; then
+			MASTER_LDAP_PASS="$(printf '%s' "$MASTER_PING" | grep -o '"ldapAdminPass"[[:space:]]*:[[:space:]]*"[^"]*"' | sed -E 's/.*:[[:space:]]*"([^"]*)".*/\1/' || true)"
+			if [[ -n "$MASTER_LDAP_PASS" ]]; then
+				CFG_LDAP_ADMIN_PASS="$MASTER_LDAP_PASS"
+				info "Adopted cluster LDAP admin credential for OpenLDAP multi-master replication"
+			fi
+		fi
 	fi
 
 	# Derive everything from the domain — the one value operators enter (or, for
@@ -1619,6 +1624,7 @@ gateway_env_set() {
 	fi
 }
 gateway_env_set VAULT_TOKEN "$(env_get JUMP_VAULT_TOKEN)"
+gateway_env_set THETA_MESH_LISTEN_PORT "${JUMP_WG_PORT:-51820}"
 gateway_env_set THETA_MESH_ENDPOINT "${CFG_JUMP_WG_ENDPOINT:-${JUMP_HOST}:${JUMP_WG_PORT:-51820}}"
 # mDNS local-discovery announcer (MULTI_SITE_SPEC.md Appendix B): tell theta-agent
 # on the same LAN which public hostnames this site fronts and what the site slug
