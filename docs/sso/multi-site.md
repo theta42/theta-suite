@@ -133,8 +133,10 @@ is already a spoke refuses to join again.
 |---|---|
 | LDAP (users, groups) | Full export on join; live push on every master change |
 | Resource catalog (hosts, apps, sites) | Same |
+| API tokens (PATs) | Exported to SQLite with bcrypt hashes; live push on create, update, rotate, or revoke |
+| Enrolled agents | Replicated with token hashes so agents can authenticate at any site; live push on enrollment changes |
 | Agent-signing key | Same — every site can validly sign a command for any agent enrolled at *any* site |
-| OpenBao integration secrets (`secret/integrations/*`, `secret/plugins/*`, `secret/conf/*`) | Replicated during export and live sync — gives all sites disaster recovery parity for integrations |
+| OpenBao integration secrets (`secret/integrations/*`, `secret/plugins/*`) | Replicated during export and live sync — gives all sites disaster recovery parity for integrations |
 
 The agent-signing key and integration secrets being synced everywhere is a deliberate tradeoff for
 small, trusted deployments (a handful of sites, not hundreds).
