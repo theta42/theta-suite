@@ -959,7 +959,7 @@ env_upsert VAULT_TOKEN "$VAULT_TOKEN"
 
 if ! docker exec -e BAO_TOKEN="$VAULT_TOKEN" openbao bao secrets list -format=json 2>/dev/null | grep -q '"secret/":'; then
     info "Enabling kv-v2 secrets engine at secret/..."
-    docker exec -e BAO_TOKEN="$VAULT_TOKEN" openbao bao secrets enable -path=secret kv-v2 >/dev/null
+    docker exec -e BAO_TOKEN="$VAULT_TOKEN" openbao bao secrets enable -path=secret kv-v2 >/dev/null || true
 fi
 
 # ── 3c. OpenBao policies, token role, per-app tokens ─────────────────────────
