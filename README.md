@@ -372,6 +372,15 @@ docker run --rm -v theta-suite_openbao-data:/data -v "$PWD":/backup alpine \
   tar czf /backup/openbao-data.tgz -C /data .
 ```
 
+> **Note on VM Sizing:** The setup script builds the `sso-manager` and `proxy` Node.js containers from source. The `npm ci` install step can be memory-intensive. If you are deploying to a VM with 1GB or less of RAM (such as a 512MB droplet), the kernel's OOM killer will likely freeze or kill the build. To prevent this, add a swap file before running `setup.sh`:
+> ```bash
+> fallocate -l 2G /swapfile
+> chmod 600 /swapfile
+> mkswap /swapfile
+> swapon /swapfile
+> echo '/swapfile none swap sw 0 0' >> /etc/fstab
+> ```
+
 ### Restore — full disaster recovery
 
 ```bash

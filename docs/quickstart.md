@@ -12,6 +12,15 @@ description: Step-by-step first run for theta-suite — prerequisites, master.en
 
 ## Prerequisites
 
+> **Note on VM Sizing:** The setup script builds the `sso-manager` and `proxy` Node.js containers from source. The `npm ci` install step can be memory-intensive. If you are deploying to a VM with 1GB or less of RAM (such as a 512MB droplet), the kernel's OOM killer will likely freeze or kill the build. To prevent this, add a swap file before running `setup.sh`:
+> ```bash
+> fallocate -l 2G /swapfile
+> chmod 600 /swapfile
+> mkswap /swapfile
+> swapon /swapfile
+> echo '/swapfile none swap sw 0 0' >> /etc/fstab
+> ```
+
 - A Linux host with **Docker + Docker Compose** (you must use the modern `docker compose` v2 plugin; the older `docker-compose` v1 standalone will fail on BuildKit images).
 - Two hostnames that resolve to the host: one for the SSO UI (your `stack.ssoHost`),
   one for the proxy mgmt UI (your `stack.proxyHost`). On a real network add DNS
