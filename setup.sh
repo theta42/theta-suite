@@ -73,6 +73,25 @@ cd "$(dirname "$0")"
 
 SETUP_START_TIME="$(date +%s)"
 CFG_ADMIN_PASS="${CFG_ADMIN_PASS:-}"
+
+# Check for swap space on low-memory systems (e.g. 512MB droplets)
+if [[ "$(free -m | awk '/^Mem:/{print $2}')" -lt 1024 ]] && [[ "$(free -m | awk '/^Swap:/{print $2}')" -eq 0 ]]; then
+	echo
+	echo -e "\033[1;33m[setup] WARNING: Less than 1GB of RAM detected and no swap space is configured.\033[0m"
+	echo "  Docker builds and runtime memory pressure may cause Out-Of-Memory (OOM) kills."
+	echo "  It is highly recommended to configure a swapfile before continuing:"
+	echo "    fallocate -l 1G /swapfile"
+	echo "    chmod 600 /swapfile"
+	echo "    mkswap /swapfile"
+	echo "    swapon /swapfile"
+	echo "    echo '/swapfile none swap sw 0 0' >> /etc/fstab"
+	echo
+	read -p "Continue anyway? [y/N] " -n 1 -r
+	echo
+	if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+		exit 1
+	fi
+fi
 CONFIG_DIR=./config
 BACKUP_DIR=./backups
 BACKUP_KEEP="${BACKUP_KEEP:-5}"
@@ -1256,7 +1275,7 @@ info "Starting sso-manager..."
 "${COMPOSE[@]}" up -d sso-manager
 
 info "Waiting for sso-manager to be healthy..."
-for i in $(seq 1 60); do
+for i in $(seq 1 120); do
 	status=$("${COMPOSE[@]}" ps -o json sso-manager 2>/dev/null \
 	         | grep -o '"Health":"healthy"' || true)
 	if [[ -n "$status" ]]; then info "sso-manager is healthy."; break; fi
@@ -1513,7 +1532,7 @@ info "Starting proxy..."
 "${COMPOSE[@]}" up -d proxy
 
 info "Waiting for proxy to be healthy..."
-for i in $(seq 1 60); do
+for i in $(seq 1 120); do
 	if docker exec proxy curl -fsS http://localhost:3000/health >/dev/null 2>&1; then
 		info "proxy is healthy."; break
 	fi
@@ -1651,7 +1670,7 @@ gateway_env_set THETA_SUITE_VERSION "$(git describe --tags 2>/dev/null || echo u
 $SUDO systemctl restart theta-gateway
 
 info "Waiting for theta-gateway to be healthy..."
-for i in $(seq 1 60); do
+for i in $(seq 1 120); do
 	if curl -fsS --max-time 2 http://127.0.0.1:3002/health >/dev/null 2>&1; then
 		info "theta-gateway is healthy."; break
 	fi
