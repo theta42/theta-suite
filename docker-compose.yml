@@ -131,7 +131,7 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 30s
+      start_period: 120s
 
   proxy:
     build:
@@ -207,7 +207,7 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 30s
+      start_period: 120s
 
   # The SSH jump host / site router is NOT here: it runs on the HOST, installed
   # by jump-host/install.sh as the theta-gateway systemd service.
