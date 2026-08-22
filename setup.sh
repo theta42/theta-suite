@@ -1789,6 +1789,9 @@ if [[ "$CFG_THETA_AGENT_ENABLE" == "1" ]]; then
 			$SUDO mkdir -p /etc/theta42
 			if [[ ! -f /etc/theta42/agent.yml ]]; then
 				$SUDO cp agent.yml.example /etc/theta42/agent.yml
+				if [[ -n "${CFG_SITE_NAME:-}" ]]; then
+					$SUDO sed -i "s|^location:.*|location: \"${CFG_SITE_NAME}\"|" /etc/theta42/agent.yml
+				fi
 				# Write the JOIN KEY, not a locally-invented token. The SSO
 				# only accepts credentials it issued, so the random token
 				# this used to generate could never authenticate -- the
