@@ -105,7 +105,10 @@ function proxyRedirectUris() {
 	];
 }
 const SSO_INTERNAL = 'http://localhost:3001';
-const CLIENT_NAME = 'theta-proxy';
+const SITE_NAME = (sso.stack && sso.stack.siteName) || 'local';
+const slugify = (s) => (s || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+const SITE_SLUG = slugify(SITE_NAME);
+const CLIENT_NAME = SITE_NAME && SITE_NAME !== 'local' ? `theta-proxy (${SITE_NAME})` : 'theta-proxy';
 
 const ADMIN_DN  = `cn=${ADMIN_UID},ou=people,${BASE_DN}`;
 const SVC_DN    = `cn=ldapclient,ou=people,${BASE_DN}`;
@@ -432,8 +435,6 @@ async function rotateClient(token, id) {
 const DOMAIN = (sso.stack && sso.stack.ldapDomain) || '';
 const ORG    = sso.name || 'SSO Manager';
 
-const slugify = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-
 async function dirGet(token, path) {
 	const res = await fetch(`${SSO_INTERNAL}/api/directory-admin/${path}`, {
 		headers: { 'auth-token': token },
@@ -479,11 +480,6 @@ async function dirDelete(token, path) {
 	}
 	return res.json();
 }
-
-// The site the stack registers itself under. Also the default "Location
-// (Site)" that ldap-client-joined Linux hosts attach to (parent slug
-// site_<name> — see ldap-client/index.sh), so the slugs must line up.
-const SITE_NAME = (sso.stack && sso.stack.siteName) || 'local';
 
 // Host facts, collected by setup.sh ON THE HOST (inside this container
 // hostname/uname describe the container) and passed via the exec env. Same
@@ -558,11 +554,11 @@ async function seedDirectory(token, clientId, jumpClientId) {
 
 	// site_<name> / host_<name> slug convention matches ldap-client/index.sh.
 	// altSlugs grandfather in the layout the first seed release used.
-	const site = await ensure('site', SITE_NAME, `site_${slugify(SITE_NAME)}`, null,
+	const site = await ensure('site', SITE_NAME, `site_${SITE_SLUG}`, null,
 		{ isCurrentSite: true },
 		[slugify(DOMAIN || ORG)]);
-	const hostSlug = HOST_FACTS.name ? `host_${slugify(HOST_FACTS.name)}` : 'stack-host';
-	const host = await ensure('host', HOST_FACTS.name || 'Stack host', hostSlug, site.id, {
+	const hostSlug = HOST_FACTS.name ? `host_${slugify(HOST_FACTS.name)}` : `host_theta-suite-${SITE_SLUG}`;
+	const host = await ensure('host', HOST_FACTS.name || `theta-suite-${SITE_NAME}`, hostSlug, site.id, {
 		subType: 'linux',
 		ip: HOST_FACTS.ip,
 		address: HOST_FACTS.ip,
@@ -591,7 +587,7 @@ async function seedDirectory(token, clientId, jumpClientId) {
 	// `openbao` already do. So: no synthetic hosts — Proxy's and jump-host's
 	// services parent directly onto the stack host, same as everything else.
 
-	await ensure('service', 'SSO Manager', 'sso-manager', host.id, {
+	await ensure('service', SITE_NAME && SITE_NAME !== 'local' ? `SSO Manager (${SITE_NAME})` : 'SSO Manager', `sso-manager-${SITE_SLUG}`, host.id, {
 		address: `https://${SSO_HOST}`,
 		port: 3001,
 		gitRepo: 'https://github.com/theta42/sso-manager-node',
@@ -599,11 +595,12 @@ async function seedDirectory(token, clientId, jumpClientId) {
 		icon: 'mdi:shield-account',
 		tagline: 'Home-lab identity and access management.',
 		requestable: false,
-	});
+	}, ['sso-manager']);
+
 	// Proxy = the node management UI; OpenResty = the data plane every hostname
 	// in the stack actually flows through (80/443). Two faces, two entries, both
 	// parented directly to the stack host — see the "Host means..." note above.
-	const psvc = await ensure('service', 'Proxy', 'proxy', host.id, {
+	const psvc = await ensure('service', SITE_NAME && SITE_NAME !== 'local' ? `Proxy (${SITE_NAME})` : 'Proxy', `proxy-${SITE_SLUG}`, host.id, {
 		address: `https://${PROXY_HOST}`,
 		port: 3000,
 		gitRepo: 'https://github.com/theta42/proxy',
@@ -611,14 +608,15 @@ async function seedDirectory(token, clientId, jumpClientId) {
 		icon: 'mdi:server-network',
 		tagline: 'Reverse proxy and API gateway.',
 		requestable: false,
-	});
+	}, ['proxy']);
+
 	// OpenLDAP is independently consumed — Linux hosts authenticate against it
 	// (PAM/SSSD, sudoRole, sshPublicKey) and LDAP-native apps bind directly
 	// (see the SSO's /integrations page) — so it gets its own entry. Advertise
 	// the operator-configured LDAPS hostname when set, else the SSO host.
 	// The bundled slapd's image/config live in sso-manager-node.
 	const LDAPS_HOST = (sso.ldap && sso.ldap.ldapsHost) || SSO_HOST;
-	await ensure('service', 'OpenLDAP Directory', 'openldap', host.id, {
+	await ensure('service', SITE_NAME && SITE_NAME !== 'local' ? `OpenLDAP Directory (${SITE_NAME})` : 'OpenLDAP Directory', `openldap-${SITE_SLUG}`, host.id, {
 		address: `ldaps://${LDAPS_HOST}:636`,
 		port: 389,
 		externalPort: 636,
@@ -628,11 +626,12 @@ async function seedDirectory(token, clientId, jumpClientId) {
 		icon: 'mdi:book-open-outline',
 		tagline: 'LDAP directory for identity.',
 		requestable: false,
-	});
+	}, ['openldap']);
+
 	// Wildcard address: OpenResty fronts every host under the domain (same
 	// */** wildcard convention the proxy's Host records use). Its config lives
 	// in the proxy repo (ops/nginx_conf).
-	await ensure('service', 'OpenResty Edge', 'openresty', host.id, {
+	await ensure('service', SITE_NAME && SITE_NAME !== 'local' ? `OpenResty Edge (${SITE_NAME})` : 'OpenResty Edge', `openresty-${SITE_SLUG}`, host.id, {
 		address: DOMAIN ? `https://*.${DOMAIN}` : `https://${PROXY_HOST}`,
 		port: 443,
 		gitRepo: 'https://github.com/theta42/proxy',
@@ -640,7 +639,7 @@ async function seedDirectory(token, clientId, jumpClientId) {
 		icon: 'mdi:router-network',
 		tagline: 'Data plane.',
 		requestable: false,
-	});
+	}, ['openresty']);
 
 	// Remove or set ignored on OpenBao/bao-renewer seed resources if present — OpenBao is an
 	// internal stack service, not a user-facing published directory service.
@@ -654,7 +653,7 @@ async function seedDirectory(token, clientId, jumpClientId) {
 	let jumpSvc = null;
 	{
 		const jumpHost = process.env.CFG_JUMP_HOST || (DOMAIN ? `jump.${DOMAIN}` : '');
-		jumpSvc = await ensure('service', 'SSH Jump Host', 'jump-host', host.id, {
+		jumpSvc = await ensure('service', SITE_NAME && SITE_NAME !== 'local' ? `SSH Jump Host (${SITE_NAME})` : 'SSH Jump Host', `jump-host-${SITE_SLUG}`, host.id, {
 			address: jumpHost ? `https://${jumpHost}` : '',
 			port: 3002,
 			gitRepo: 'https://github.com/theta42/jump-host',
@@ -662,7 +661,7 @@ async function seedDirectory(token, clientId, jumpClientId) {
 			icon: 'mdi:ssh',
 			tagline: 'Secure SSH jump host.',
 			requestable: false,
-		});
+		}, ['jump-host']);
 	}
 
 	// Correct installs seeded between 2026-08-05 and this release, where Proxy's
@@ -814,7 +813,7 @@ function writeProxyCreds(id, secret) {
 // is never what the operator wants). Idempotent: only mints when the file's
 // `sso.apiToken` is still empty, and only rewrites that one line. Warn-only —
 // no token just means no suggestions.
-const PROXY_TOKEN_NAME = 'theta-proxy';
+const PROXY_TOKEN_NAME = SITE_NAME && SITE_NAME !== 'local' ? `theta-proxy (${SITE_NAME})` : 'theta-proxy';
 
 async function isApiTokenValid(tokenStr) {
 	if (!tokenStr || typeof tokenStr !== 'string' || !tokenStr.startsWith('sso_')) return false;
@@ -847,7 +846,7 @@ async function ensureProxyApiToken(token) {
 		return;
 	}
 	try {
-		const apiToken = await mintApiToken(token, PROXY_TOKEN_NAME, 'theta-suite proxy (auto-registered)');
+		const apiToken = await mintApiToken(token, PROXY_TOKEN_NAME, `theta-suite proxy (${SITE_NAME}) (auto-registered)`);
 		// Replace the apiToken line inside the sso block only. The jump host's
 		// token lives in a different file, so an unanchored match is safe here.
 		const updated = src.replace(/(apiToken:\s*)(['"])[^'"]*\2/, `$1$2${apiToken}$2`);
@@ -879,7 +878,7 @@ async function ensureAgentJoinKey(token) {
 		const res = await fetch(`${SSO_INTERNAL}/api/agent/join-keys`, {
 			method: 'POST',
 			headers: { 'auth-token': token, 'Content-Type': 'application/json' },
-			body: JSON.stringify({ label: 'setup' }),
+			body: JSON.stringify({ label: SITE_NAME && SITE_NAME !== 'local' ? `setup (${SITE_NAME})` : 'setup' }),
 		});
 		if (!res.ok) throw new Error(`${res.status} ${await res.text().catch(() => '')}`);
 		const data = await res.json();
@@ -904,15 +903,15 @@ async function ensureAgentJoinKey(token) {
 // token.
 const JUMP_HOST = process.env.CFG_JUMP_HOST || (DOMAIN ? `jump.${DOMAIN}` : '');
 const JUMP_SECRETS = '/config/jump-secrets.js';
-const JUMP_TOKEN_NAME = 'theta-jump-host';
-const JUMP_CLIENT_NAME = 'theta-jump';
+const JUMP_TOKEN_NAME = SITE_NAME && SITE_NAME !== 'local' ? `theta-jump (${SITE_NAME})` : 'theta-jump-host';
+const JUMP_CLIENT_NAME = SITE_NAME && SITE_NAME !== 'local' ? `theta-jump (${SITE_NAME})` : 'theta-jump';
 const JUMP_REDIRECT_URI = `https://${JUMP_HOST}/api/auth/oidc/callback`;
 
 async function mintApiToken(token, name, description) {
 	const res = await fetch(`${SSO_INTERNAL}/api/api-token`, {
 		method: 'POST',
 		headers: { 'auth-token': token, 'Content-Type': 'application/json' },
-		body: JSON.stringify({ name, description: description || 'theta-suite jump host (auto-registered)' }),
+		body: JSON.stringify({ name, description: description || `theta-suite jump host (${SITE_NAME}) (auto-registered)` }),
 	});
 	if (!res.ok) throw new Error(`mint API token failed (${res.status}): ${await res.text().catch(() => '')}`);
 	const data = await res.json();
@@ -1023,21 +1022,21 @@ async function provisionJumpHost(token) {
 	if (jumpFileComplete() && tokenValid) {
 		log('Jump host: /config/jump-secrets.js already has valid API token + OIDC client — keeping.');
 		const clients = await listClients(token);
-		const existing = clients.find((c) => c.name === JUMP_CLIENT_NAME);
+		const existing = clients.find((c) => c.name === JUMP_CLIENT_NAME || c.name === 'theta-jump');
 		return existing ? existing.client_id : null;
 	}
 	const apiToken = tokenValid ? existingToken : await mintApiToken(token, JUMP_TOKEN_NAME);
 
 	// Mint (or reuse) the jump host's own OAuth client for web-UI SSO login.
 	const clients = await listClients(token);
-	let oidc = clients.find((c) => c.name === JUMP_CLIENT_NAME);
+	let oidc = clients.find((c) => c.name === JUMP_CLIENT_NAME || c.name === 'theta-jump');
 	if (oidc && oidc.client_id) {
 		oidc = await rotateClient(token, oidc.client_id);
 		oidc = { id: oidc.id, secret: oidc.secret };
 	} else {
 		oidc = await createClient(token, {
 			name: JUMP_CLIENT_NAME,
-			description: 'theta-suite jump host web UI (auto-registered)',
+			description: `theta-suite jump host (${SITE_NAME}) web UI (auto-registered)`,
 			redirect_uris: [JUMP_REDIRECT_URI],
 		});
 	}
@@ -1061,7 +1060,7 @@ async function provisionJumpHost(token) {
 		let resolvedClientId = '';
 		let client = null;
 		if (HAS_USABLE_CREDS) client = list.find((c) => c.client_id === EXISTING_ID);
-		if (!client) client = list.find((c) => c.name === CLIENT_NAME);
+		if (!client) client = list.find((c) => c.name === CLIENT_NAME || c.name === 'theta-proxy');
 
 		// Widen an existing client before any of the branches below return: a
 		// freshly created one already gets these from createClient().

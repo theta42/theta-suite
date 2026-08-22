@@ -1821,6 +1821,13 @@ if [[ "$CFG_THETA_AGENT_ENABLE" == "1" ]]; then
 				# else in this block ever touched server_url, only join_key.
 				AGENT_SCHEME="https"; [[ "${CFG_CREATE_ALL_HTTP:-0}" == "1" ]] && AGENT_SCHEME="http"
 				$SUDO sed -i "s|^server_url:.*|server_url: \"${AGENT_SCHEME}://${CFG_SSO_HOST}\"|" /etc/theta42/agent.yml
+				if [[ -n "${CFG_SITE_NAME}" ]]; then
+					if $SUDO grep -q '^location:' /etc/theta42/agent.yml; then
+						$SUDO sed -i "s|^location:.*|location: \"${CFG_SITE_NAME}\"|" /etc/theta42/agent.yml
+					else
+						echo "location: \"${CFG_SITE_NAME}\"" | $SUDO tee -a /etc/theta42/agent.yml >/dev/null
+					fi
+				fi
 				$SUDO getent group theta-secrets >/dev/null 2>&1 || $SUDO groupadd -r theta-secrets 2>/dev/null || true
 				$SUDO getent group theta >/dev/null 2>&1 || $SUDO groupadd -r theta 2>/dev/null || true
 				SECRETS_GRP="root"
@@ -1839,6 +1846,11 @@ if [[ "$CFG_THETA_AGENT_ENABLE" == "1" ]]; then
 				AGENT_SCHEME="https"; [[ "${CFG_CREATE_ALL_HTTP:-0}" == "1" ]] && AGENT_SCHEME="http"
 				if $SUDO grep -q '^server_url:' /etc/theta42/agent.yml; then
 					$SUDO sed -i "s|^server_url:.*|server_url: \"${AGENT_SCHEME}://${CFG_SSO_HOST}\"|" /etc/theta42/agent.yml
+				fi
+				if [[ -n "${CFG_SITE_NAME}" ]]; then
+					if $SUDO grep -q '^location:' /etc/theta42/agent.yml; then
+						$SUDO sed -i "s|^location:.*|location: \"${CFG_SITE_NAME}\"|" /etc/theta42/agent.yml
+					fi
 				fi
 			fi
 			# Stop a running agent before overwriting its binary (cp into a
@@ -1959,22 +1971,22 @@ LDAPVARS
 		info "  Configuring theta-agent with full host control capabilities..."
 		if [[ -f /etc/theta42/agent.yml ]]; then
 			$SUDO sed -i 's/arbitrary_bash: false/arbitrary_bash: true/' /etc/theta42/agent.yml
-			# service_control is a []string allowlist (NOT a bool) — setting it to
-			# `true` makes the agent fail YAML decode and crash-loop. There is no
-			# wildcard; leave the operator's list (or the [] default = deny all)
-			# alone and document how to enable specific services.
-			# $SUDO sed -i 's/service_control: .*/service_control: true/' ...
 			$SUDO sed -i 's/reboot: false/reboot: true/' /etc/theta42/agent.yml
 			$SUDO sed -i 's/configure_ldap: false/configure_ldap: true/' /etc/theta42/agent.yml
+			$SUDO sed -i 's/telemetry: false/telemetry: true/' /etc/theta42/agent.yml
+			if ! $SUDO grep -q '^telemetry:' /etc/theta42/agent.yml; then
+				echo "telemetry: true" | $SUDO tee -a /etc/theta42/agent.yml >/dev/null
+			fi
 			info "    (service_control left as its allowlist; set e.g. service_control: [\"nginx\"] in /etc/theta42/agent.yml to permit managing specific services)"
-			info "  theta-agent full control enabled. Restarting service..."
-			$SUDO systemctl restart theta-agent.service
+			info "  theta-agent full control enabled."
 		else
 			warn "  /etc/theta42/agent.yml not found. Full control not configured."
 		fi
 	else
 		info "  theta-agent running with limited capabilities (CFG_THETA_AGENT_FULL_CONTROL=0)."
 	fi
+	$SUDO systemctl enable theta-agent.service 2>/dev/null || true
+	$SUDO systemctl restart theta-agent.service 2>/dev/null || true
 else
 	info "  theta-agent configuration skipped (agent not installed or CFG_THETA_AGENT_ENABLE=0)."
 fi
