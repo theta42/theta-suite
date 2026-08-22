@@ -1,3 +1,7 @@
+## [3.21.17] - $(date +%Y-%m-%d)
+### Fixes
+- `sso-manager-node` (v2.24.15): Fixed an issue where new spokes with custom site names would be unable to join the master due to the `siteIsFresh` check incorrectly identifying their bootstrap-seeded OAuth clients as operator-created.
+
 ## [3.21.16] - $(date +%Y-%m-%d)
 ### Known Issues Documented
 - Added `docs/KNOWN_ISSUES.md` detailing operational footguns, security tradeoffs, and behavioral sharp edges (such as fire-and-forget replication, manual mesh peering, identical signing keys, and write-forwarding nuances).
