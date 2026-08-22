@@ -1,3 +1,18 @@
+## [3.21.16] - $(date +%Y-%m-%d)
+### Known Issues Documented
+- Added `docs/KNOWN_ISSUES.md` detailing operational footguns, security tradeoffs, and behavioral sharp edges (such as fire-and-forget replication, manual mesh peering, identical signing keys, and write-forwarding nuances).
+
+### Fixes & CI
+- Added `test/multisite_join_e2e.js` test to CI pipeline (`.github/workflows/ci.yml`).
+- Added check in `setup.sh` to ensure `10.0.0.0/8` routing exists for master host, warning if missing.
+
+### Submodules Updated
+- `jump-host`: bumped to v3.3.7
+- `ldap-client`: bumped to v1.25.1
+- `proxy`: bumped to v2.4.3
+- `sso-manager-node`: bumped to v2.24.14
+- `theta-agent`: bumped to v2.8.3
+
 # Changelog
 
 All notable changes to this project are documented here. Format loosely
