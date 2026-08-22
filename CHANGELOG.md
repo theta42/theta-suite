@@ -1,3 +1,18 @@
+## [3.22.0] - 2026-08-22
+### Enhancements
+- **White-Labelable Windows Logon Tile**: `theta-agent` (v2.9.0) supports `credential_provider_name` in `agent.yml` (or `/CP_NAME=` on the Windows installer) to replace the stock "OpenCredential" text under the tile on the Windows logon screen with a deployment's own branding. The tile logo path is documented in the agent's new `docs/WHITE_LABELING.md`.
+- **Installer Auto-Discovery (Windows)**: The theta-agent Windows installer wizard gained a "Discover local Directory (mDNS)..." button that browses `_theta-suite._tcp.local` and pre-fills the Directory URL from the announcement's TXT record — parity with what `install.sh` has long done on Linux.
+- **Download Binaries Tab**: The Directory app's Install Agent modal (`sso-manager-node` v2.25.0) now has a third tab listing direct download URLs for the agent artifacts staged under `/resources/theta-agent/`, with copy buttons and staging status checks. Useful for offline and air-gapped hosts.
+
+### Fixes
+- `theta-agent` (v2.9.0):
+  - Fixed `theta-agent update` failing on Windows: the CLI self-update no longer attempts a plain rename over the locked service exe; it stages `<self>.new` and hands the swap to the detached session helper.
+  - Fixed double-slash URLs from the installer: a pasted Directory URL with a trailing slash produced `https://host//install-agent/authorize?...`; all installer URL handling is now normalized.
+
+### Submodules Updated
+- `theta-agent`: bumped to v2.9.0
+- `sso-manager-node`: bumped to v2.25.0
+
 ## [3.21.24] - 2026-08-22
 ### Enhancements
 - **Memory/Swap Validation**: Added a check to `setup.sh` that warns users and prompts for confirmation if the host has less than 1GB of RAM and no swap space configured, including instructions on how to create a swapfile.
