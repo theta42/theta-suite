@@ -1,3 +1,18 @@
+## [3.21.24] - 2026-08-22
+### Enhancements
+- **Memory/Swap Validation**: Added a check to `setup.sh` that warns users and prompts for confirmation if the host has less than 1GB of RAM and no swap space configured, including instructions on how to create a swapfile.
+- **Improved Spoke Reliability**: Increased the `sso-manager` Docker Compose healthcheck `start_period` from 30s to 120s to accommodate slower SQLite migrations and boot times on low-end DigitalOcean droplets.
+
+### Fixes
+- `sso-manager-node` (v2.24.21):
+  - Fixed `nyc-do` agent location parenting logic to properly utilize Spoke site metadata in `DiscoveryReconciler`.
+  - Implemented 5-minute periodic `adoptFromMaster` sync loops on Spokes to prevent silent data drift.
+  - Secured the `/api/discovery/sync` endpoint against unauthenticated payload injection.
+  - Fixed Spoke onboarding requirements being incorrectly reset upon sync with the Master.
+
+### Submodules Updated
+- `sso-manager-node`: bumped to v2.24.21
+
 ## [3.21.17] - $(date +%Y-%m-%d)
 ### Fixes
 - `sso-manager-node` (v2.24.15): Fixed an issue where new spokes with custom site names would be unable to join the master due to the `siteIsFresh` check incorrectly identifying their bootstrap-seeded OAuth clients as operator-created.
