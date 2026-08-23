@@ -1,3 +1,11 @@
+## [3.22.2] - 2026-08-23
+### Fixes
+- `sso-manager-node` (v2.25.2):
+  - Patched all three open Dependabot alerts via npm overrides: `js-yaml` → 3.15.1 (GHSA-5p4m-2wfm-xmqj), `xml2js` → 0.5.0 under node-nmap (GHSA-776f-qx25-q3cc), `uuid` → 11.1.1 under sequelize (GHSA-w5hq-g745-h8pq).
+
+### Submodules Updated
+- `sso-manager-node`: bumped to v2.25.2
+
 ## [3.22.1] - 2026-08-23
 ### Fixes
 - `theta-agent` (v2.9.1):
