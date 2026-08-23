@@ -1,3 +1,19 @@
+## [3.22.1] - 2026-08-23
+### Fixes
+- `theta-agent` (v2.9.1):
+  - **Fixed the Windows agent never running at all**: the service was registered with stray `"is auto"` arguments (from the x/sys doc example) that `runAgent` misread as a config path, so the daemon exited on every start before binding the tray socket or dialing the Directory. Upgrades now also rewrite ImagePath to repair already-broken installs.
+  - **Fixed `install-service` failing on upgrade** with "The parameter is incorrect": `UpdateConfig` received an invalid zero ServiceType (no CreateService-style defaulting); ServiceType/ErrorControl are now set explicitly.
+  - **Fixed the installer's join-key flow never capturing a key**: the loopback listener's request regex used C-style escapes in PowerShell (`\\w` = literal backslash), matching nothing; every callback returned an empty key and installed agents sat with blank credentials (red tray, host absent from the fleet). The listener also now tolerates browsers' speculative preconnect sockets.
+  - **Fixed upgrades wiping enrollment**: `agent.yml` is no longer overwritten with blank `auth_token`/`public_key`; existing credentials are carried across unless new ones are explicitly supplied.
+  - **Fixed installer mDNS discovery**: the wizard now reuses the agent's own hardened `discover` browse instead of hand-rolled raw DNS packets, and program-scoped Windows Firewall rules (added for the browse + runtime, removed on uninstall) stop the default firewall posture from silently dropping every answer.
+  - Service startup errors are now logged to `%ProgramData%\Theta42\agent.log`, and the installer bundles the current WireGuard for Windows release (resolved from upstream per build, Authenticode-verified; first run picked up wireguard-amd64-1.1.msi).
+- `sso-manager-node` (v2.25.1):
+  - The `/install-agent/authorize` page shows an actionable error (naming the required admin groups) when join-key minting fails, using the shared `app.api` client.
+
+### Submodules Updated
+- `theta-agent`: bumped to v2.9.1
+- `sso-manager-node`: bumped to v2.25.1
+
 ## [3.22.0] - 2026-08-22
 ### Enhancements
 - **White-Labelable Windows Logon Tile**: `theta-agent` (v2.9.0) supports `credential_provider_name` in `agent.yml` (or `/CP_NAME=` on the Windows installer) to replace the stock "OpenCredential" text under the tile on the Windows logon screen with a deployment's own branding. The tile logo path is documented in the agent's new `docs/WHITE_LABELING.md`.
