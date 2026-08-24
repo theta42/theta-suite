@@ -1,3 +1,24 @@
+## [3.23.0] - 2026-08-23
+
+### Fixes
+- **The jump host's OIDC callback was registered against the wrong host.** `bootstrap/bootstrap.js` built the jump host's `redirect_uri` from `sso.stack.ldapDomain` — the base-DN domain — while `setup.sh` builds the web hosts from `CFG_PUBLIC_DOMAIN` (`sso.${CFG_PUBLIC_DOMAIN:-$CFG_DOMAIN}`) and derives the jump host as `jump.${CFG_PUBLIC_DOMAIN:-${SSO_HOST#*.}}`. `MULTI_SITE_SPEC` §4 explicitly allows those two domains to diverge, and `CFG_PUBLIC_DOMAIN` was never passed into the bootstrap container — so on any site where they differ, the SSO held a `redirect_uri` for a host the gateway never serves and jump-host SSO login failed. Now derived by stripping the leading label off `ssoHost`, which reproduces setup.sh's rule in both branches. Fixed in both places it appeared (the OAuth client registration and the jump-host service resource).
+- **A broken jump-host OAuth client could not be repaired by re-running `setup.sh`.** `rotateClient()` only rolls the client *secret*; it never touches `redirect_uris`. An existing `theta-jump` client therefore kept whatever URI an earlier bootstrap computed, forever. Added `ensureClientRedirectUri()`, which PUTs the expected URI before rotating, so existing deployments self-heal on the next run.
+- **`setup.sh` aborted unattended installs on low-memory hosts.** The swap check added in 3.21.18 sits below `set -euo pipefail` and called a bare `read -p`. With stdin closed — cloud-init user-data, CI, `bash setup.sh < /dev/null` — `read` returns non-zero at EOF and `set -e` killed the run, on exactly the 512MB droplets the warning exists to help. It now guards on `command -v free` (absent on minimal images), prompts only when stdin is a TTY, and honours `CFG_SKIP_MEM_CHECK=1`.
+
+### Documentation
+- **CHANGELOG date placeholders.** The 3.21.16 and 3.21.17 headings carried a literal `$(date +%Y-%m-%d)` instead of a date — `release_suite.sh` wrote them through a quoted heredoc (`<< 'CL'`), which suppresses command substitution. Both now read 2026-08-22. The same defect was fixed this round in `theta-directory` (2.24.15) and `ldap-client` (1.25.1).
+- **Corrected the 3.21.16 entry**, which claimed `test/multisite_join_e2e.js` had been added to the CI pipeline. That release (`c4dd464`) touched neither `.github/workflows/ci.yml` nor any test file, and no such path exists in this repo.
+- **Corrected `docs/KNOWN_ISSUES.md`.** The "Multi-Site E2E Not in CI" entry was out of date: that suite runs as the `Multi-Site E2E` job in `theta-directory`'s `pr-tests.yml` on every PR there, and `test-summary` gates merges on it. The entry now describes the gap that is genuinely open — the suite-level `test/integration.test.js`, which cannot run on a clean runner because `docker-compose.yml` bind-mounts a `setup.sh`-generated `./config/`.
+
+### Submodules Updated
+- `sso-manager-node`: bumped to **v2.25.3** — Install Agent "Download binaries" tab could not download anything (three defects, including a `ReferenceError` that made every join-key mint report failure for a key that was actually created); seven Font Awesome **Pro** `fad` icons rendering as blanks on the login/reset/invite pages; two Bootstrap 4 input groups; `package.json` version drift.
+- `theta-agent`: bumped to **v2.10.0** — new `config-set` subcommand so re-installing no longer requires deleting `agent.yml`; "Open Config" moved out of the session-0/no-DISPLAY daemon into the tray; the Linux installer now starts the tray in existing sessions instead of only writing an autostart entry; Linux desktop/power controls rewritten around logind (were X11-only and called `loginctl terminate-session` with no session ID); `processUptime` off-by-one; `AgentVersion` drift. 15 new tests.
+- `jump-host`: bumped to **v3.3.8** — nav bar bell regression.
+- `proxy`: bumped to **v2.4.4** — nav bar bell regression.
+- `ldap-client`: bumped to **v1.25.2** — changelog date placeholder.
+
+> **Note on the nav bar regressions.** jump-host and proxy had both already fixed `.form-inline` → `d-flex align-items-center` (jump-host #56, proxy #226). The shared "interactive notification controls" frontend rollout carried a stale `top.ejs` into both, silently reverting each fix — jump-host in its v3.3.2 release, proxy in v2.4.2. The Directory escaped only because its own fix (#232) landed after. Worth watching on the next shared-frontend rollout.
+
 ## [3.22.2] - 2026-08-23
 ### Fixes
 - `sso-manager-node` (v2.25.2):
@@ -52,16 +73,15 @@
 ### Submodules Updated
 - `sso-manager-node`: bumped to v2.24.21
 
-## [3.21.17] - $(date +%Y-%m-%d)
+## [3.21.17] - 2026-08-22
 ### Fixes
 - `sso-manager-node` (v2.24.15): Fixed an issue where new spokes with custom site names would be unable to join the master due to the `siteIsFresh` check incorrectly identifying their bootstrap-seeded OAuth clients as operator-created.
 
-## [3.21.16] - $(date +%Y-%m-%d)
+## [3.21.16] - 2026-08-22
 ### Known Issues Documented
 - Added `docs/KNOWN_ISSUES.md` detailing operational footguns, security tradeoffs, and behavioral sharp edges (such as fire-and-forget replication, manual mesh peering, identical signing keys, and write-forwarding nuances).
 
-### Fixes & CI
-- Added `test/multisite_join_e2e.js` test to CI pipeline (`.github/workflows/ci.yml`).
+### Fixes
 - Added check in `setup.sh` to ensure `10.0.0.0/8` routing exists for master host, warning if missing.
 
 ### Submodules Updated
