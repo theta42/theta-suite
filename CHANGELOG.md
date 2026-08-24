@@ -19,7 +19,7 @@ real deployment before being fixed, and the fixes verified there.
 - `theta-directory`: **v2.26.0 → v2.26.1** — Docker discovery parents containers onto their site-scoped service; the reconciler no longer strands a child whose declared parent does not resolve.
 
 ### Known gaps
-- **theta-agent has no pull-request CI.** Its only workflow triggers on tags, so `go test` first runs *after* a release is cut — which is how v2.11.0 published six of thirteen assets. A `ci.yml` running vet/test on Linux **and** Windows is written and ready but could not be pushed: the credential in use lacks GitHub's `workflow` OAuth scope.
+- ~~**theta-agent has no pull-request CI.**~~ **Closed after this release was tagged** (theta-agent#34): its only workflow triggered on tags, so `go test` first ran *after* a release was cut — which is how v2.11.0 published six of thirteen assets. `ci.yml` now runs vet/test on Linux **and** Windows for every pull request, cross-builds each published target, and compiles the test binaries for Windows. Not in v2.12.0's tree; it lands with the next agent release.
 - A site's `dnsHost` is never populated, so the `site_lan_endpoint` home hint added in 3.24.0 is never actually sent. Harmless now that the mDNS sighting is the primary signal, but the hint remains dead code paid for on every config push.
 
 ## [3.24.1] - 2026-08-24
