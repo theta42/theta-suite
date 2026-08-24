@@ -74,23 +74,38 @@ cd "$(dirname "$0")"
 SETUP_START_TIME="$(date +%s)"
 CFG_ADMIN_PASS="${CFG_ADMIN_PASS:-}"
 
-# Check for swap space on low-memory systems (e.g. 512MB droplets)
-if [[ "$(free -m | awk '/^Mem:/{print $2}')" -lt 1024 ]] && [[ "$(free -m | awk '/^Swap:/{print $2}')" -eq 0 ]]; then
-	echo
-	echo -e "\033[1;33m[setup] WARNING: Less than 1GB of RAM detected and no swap space is configured.\033[0m"
-	echo "  Docker builds and runtime memory pressure may cause Out-Of-Memory (OOM) kills."
-	echo "  It is highly recommended to configure a swapfile before continuing:"
-	echo "    fallocate -l 1G /swapfile"
-	echo "    chmod 600 /swapfile"
-	echo "    mkswap /swapfile"
-	echo "    swapon /swapfile"
-	echo "    echo '/swapfile none swap sw 0 0' >> /etc/fstab"
-	echo
-	read -p "Continue anyway? [y/N] " -n 1 -r
-	echo
-	if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-		exit 1
+# Check for swap space on low-memory systems (e.g. 512MB droplets). Advisory
+# only: `free` is absent on some minimal images, and this runs under `set -e`
+# with stdin possibly closed (cloud-init user-data, CI, `bash setup.sh < /dev/null`),
+# where a bare `read` returns non-zero at EOF and would abort the whole run --
+# on exactly the small droplets this warning exists to help. Prompt only on a
+# TTY; otherwise warn and continue. CFG_SKIP_MEM_CHECK=1 silences it entirely.
+if [[ "${CFG_SKIP_MEM_CHECK:-0}" != "1" ]] && command -v free >/dev/null 2>&1; then
+	_mem_total="$(free -m | awk '/^Mem:/{print $2}')"
+	_swap_total="$(free -m | awk '/^Swap:/{print $2}')"
+	if [[ "${_mem_total:-0}" -lt 1024 && "${_swap_total:-0}" -eq 0 ]]; then
+		echo
+		echo -e "\033[1;33m[setup] WARNING: Less than 1GB of RAM detected and no swap space is configured.\033[0m"
+		echo "  Docker builds and runtime memory pressure may cause Out-Of-Memory (OOM) kills."
+		echo "  It is highly recommended to configure a swapfile before continuing:"
+		echo "    fallocate -l 1G /swapfile"
+		echo "    chmod 600 /swapfile"
+		echo "    mkswap /swapfile"
+		echo "    swapon /swapfile"
+		echo "    echo '/swapfile none swap sw 0 0' >> /etc/fstab"
+		echo
+		if [[ -t 0 ]]; then
+			REPLY=""
+			read -p "Continue anyway? [y/N] " -n 1 -r || true
+			echo
+			if [[ ! "$REPLY" =~ ^[Yy]$ ]]; then
+				exit 1
+			fi
+		else
+			echo "[setup] Non-interactive run — continuing without swap. Set CFG_SKIP_MEM_CHECK=1 to silence."
+		fi
 	fi
+	unset _mem_total _swap_total
 fi
 CONFIG_DIR=./config
 BACKUP_DIR=./backups

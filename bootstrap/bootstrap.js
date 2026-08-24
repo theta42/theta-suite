@@ -423,6 +423,24 @@ async function rotateClient(token, id) {
 	return { id, secret: data.client_secret };
 }
 
+// rotateClient only rolls the secret -- it leaves redirect_uris alone. A client
+// minted by an older bootstrap therefore keeps whatever redirect_uri that run
+// computed, so re-running setup.sh could not repair one that was registered
+// against the wrong host. Push the expected URI back onto an existing client.
+async function ensureClientRedirectUri(token, id, uri) {
+	const res = await fetch(`${SSO_INTERNAL}/api/oauth/client/${id}`, {
+		method: 'PUT',
+		headers: { 'auth-token': token, 'Content-Type': 'application/json' },
+		body: JSON.stringify({ redirect_uris: [uri] }),
+	});
+	if (!res.ok) {
+		const text = await res.text().catch(() => '');
+		log(`WARN: could not update redirect_uri for OAuth client ${id} (${res.status}): ${text}`);
+		return;
+	}
+	log(`OAuth client ${id}: redirect_uri set to ${uri}`);
+}
+
 // ── 5. Seed the SSO directory with the stack's own resources ────────────────
 // The Directory page (site → host → service hierarchy) starts empty even
 // though this stack knows exactly what it deployed. Seed it: one site (the
@@ -652,7 +670,7 @@ async function seedDirectory(token, clientId, jumpClientId) {
 	// SSH jump host service (core component — always registered).
 	let jumpSvc = null;
 	{
-		const jumpHost = process.env.CFG_JUMP_HOST || (DOMAIN ? `jump.${DOMAIN}` : '');
+		const jumpHost = JUMP_HOST;
 		jumpSvc = await ensure('service', SITE_NAME && SITE_NAME !== 'local' ? `SSH Jump Host (${SITE_NAME})` : 'SSH Jump Host', `jump-host-${SITE_SLUG}`, host.id, {
 			address: jumpHost ? `https://${jumpHost}` : '',
 			port: 3002,
@@ -901,7 +919,16 @@ async function ensureAgentJoinKey(token) {
 // bare-metal deployments should use a scoped account + attribute ACL instead
 // (see the jump-host README). Idempotent: skips if the file already has a real
 // token.
-const JUMP_HOST = process.env.CFG_JUMP_HOST || (DOMAIN ? `jump.${DOMAIN}` : '');
+// The jump host's PUBLIC web hostname -- not its LDAP domain. setup.sh builds
+// the web hosts from CFG_PUBLIC_DOMAIN (`sso.${CFG_PUBLIC_DOMAIN:-$CFG_DOMAIN}`)
+// and derives the jump host as `jump.${CFG_PUBLIC_DOMAIN:-${SSO_HOST#*.}}`,
+// while ldapDomain is CFG_DOMAIN -- the base-DN domain, which MULTI_SITE_SPEC
+// §4 explicitly allows to diverge from the public one. Deriving from ldapDomain
+// registered a redirect_uri for a host the gateway never serves, so the OIDC
+// callback failed on every site where the two differ. Strip the leading label
+// off ssoHost instead: that reproduces setup.sh's rule in both branches.
+const PUBLIC_DOMAIN = SSO_HOST.includes('.') ? SSO_HOST.slice(SSO_HOST.indexOf('.') + 1) : '';
+const JUMP_HOST = process.env.CFG_JUMP_HOST || (PUBLIC_DOMAIN ? `jump.${PUBLIC_DOMAIN}` : '');
 const JUMP_SECRETS = '/config/jump-secrets.js';
 const JUMP_TOKEN_NAME = SITE_NAME && SITE_NAME !== 'local' ? `theta-jump (${SITE_NAME})` : 'theta-jump-host';
 const JUMP_CLIENT_NAME = SITE_NAME && SITE_NAME !== 'local' ? `theta-jump (${SITE_NAME})` : 'theta-jump';
@@ -1031,6 +1058,7 @@ async function provisionJumpHost(token) {
 	const clients = await listClients(token);
 	let oidc = clients.find((c) => c.name === JUMP_CLIENT_NAME || c.name === 'theta-jump');
 	if (oidc && oidc.client_id) {
+		await ensureClientRedirectUri(token, oidc.client_id, JUMP_REDIRECT_URI);
 		oidc = await rotateClient(token, oidc.client_id);
 		oidc = { id: oidc.id, secret: oidc.secret };
 	} else {
