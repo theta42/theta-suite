@@ -1,3 +1,27 @@
+## [3.25.0] - 2026-08-24
+
+Three bugs reported against a live deployment, plus a fourth found in that
+host's agent log while diagnosing them. All four were reproduced against the
+real deployment before being fixed, and the fixes verified there.
+
+### Fixes
+- **The agent's hosts override could break TLS for the entire machine.** When a site gateway announces itself over mDNS, the agent repoints the directory's hostname at the announced LAN address in the platform hosts file — without ever checking that the LAN address serves a certificate valid for that name. Where TLS terminates somewhere the LAN address is not behind (a wildcard cert on a border reverse proxy, a tunnel provider, a corporate ingress) it does not: on the reporting deployment the public path served a valid Let's Encrypt certificate while the LAN address served the suite's **own** OpenResty `sni-support-required-for-valid-ssl` self-signed fallback. Because `/etc/hosts` is system-wide, the override broke the browser and `curl` too, not just the agent. The override is now verified before it is committed and re-checked every poll.
+- **A stale hosts block survived every restart**, because the "already resolves to the discovered address, no override needed" shortcut reads the block back through the resolver — so the agent compared its own previous answer against itself. A block written by an older version could not be cleared by upgrading.
+- **An agent sitting on its own site's LAN reported "away from home"** once a minute forever, and auto-VPN dutifully brought a tunnel up at home. Local discovery already held the answer and was discarding it: mDNS is link-local by construction, so seeing the site on this link *is* being on its LAN. That sighting is now the primary home signal.
+- **Mesh enrolment ran once, with the wrong credential, and never again.** A self-enrolling host dials the WebSocket with its join key and is issued its auth token over that same connection moments later; enrolment fired on connect with a snapshot taken before the dial, and the REST endpoint rejects a join key. On the reporting host the 401 landed **one second** before the credential that would have worked was written — and was never retried for the life of the connection, so the device had no mesh row at all.
+- **The stack's own containers landed at the root of the resource tree on every fresh install.** Docker discovery named each container's parent by bare compose service name (`sso-manager`), but service resources are seeded site-scoped (`sso-manager-<site>`) — so every edge named a parent that did not exist. It failed twice over: the reconciler dropped the edge silently *and* excluded the child from the site fallback below it, because that fallback keyed on "appeared as a child in the payload" rather than "actually got parented".
+
+### Changed
+- `bootstrap.js` now passes the site slug to the Docker discovery plugin (`serviceSuffix`), and `ensurePlugin` **backfills config keys an existing plugin instance has never had** instead of leaving every existing install behind. Only absent keys are filled — an operator's own edits are never overwritten — so an upgrade repairs the resource tree without anyone touching the plugin by hand.
+
+### Submodules Updated
+- `theta-agent`: **v2.11.1 → v2.12.0** — hosts-override TLS verification, stale-block cleanup, mDNS-based home detection, mesh-enrolment retry.
+- `theta-directory`: **v2.26.0 → v2.26.1** — Docker discovery parents containers onto their site-scoped service; the reconciler no longer strands a child whose declared parent does not resolve.
+
+### Known gaps
+- **theta-agent has no pull-request CI.** Its only workflow triggers on tags, so `go test` first runs *after* a release is cut — which is how v2.11.0 published six of thirteen assets. A `ci.yml` running vet/test on Linux **and** Windows is written and ready but could not be pushed: the credential in use lacks GitHub's `workflow` OAuth scope.
+- A site's `dnsHost` is never populated, so the `site_lan_endpoint` home hint added in 3.24.0 is never actually sent. Harmless now that the mDNS sighting is the primary signal, but the hint remains dead code paid for on every config push.
+
 ## [3.24.1] - 2026-08-24
 
 ### Fixes
