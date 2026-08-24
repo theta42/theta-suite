@@ -1,3 +1,9 @@
+## [Unreleased]
+### Fixes
+- **CHANGELOG date placeholders**: The 3.21.16 and 3.21.17 headings carried a literal `$(date +%Y-%m-%d)` instead of a date -- `release_suite.sh` wrote them through a quoted heredoc (`<< 'CL'`), which suppresses expansion. Both now read 2026-08-22, the actual release date. Same fix applied in `sso-manager-node` (2.24.15) and `ldap-client` (1.25.1).
+- **Corrected the 3.21.16 entry**: it claimed `test/multisite_join_e2e.js` had been added to the CI pipeline. That release (c4dd464) touched neither `.github/workflows/ci.yml` nor any test file, and no such path exists in this repo. The claim has been removed.
+- **Corrected `docs/KNOWN_ISSUES.md`**: the "Multi-Site E2E Not in CI" entry was out of date. That suite runs as the `Multi-Site E2E` job in `sso-manager-node`'s `pr-tests.yml` on every PR there, and `test-summary` gates merges on it. The entry now describes what is genuinely uncovered -- the suite-level `test/integration.test.js` -- and why.
+
 ## [3.22.2] - 2026-08-23
 ### Fixes
 - `sso-manager-node` (v2.25.2):
@@ -52,16 +58,15 @@
 ### Submodules Updated
 - `sso-manager-node`: bumped to v2.24.21
 
-## [3.21.17] - $(date +%Y-%m-%d)
+## [3.21.17] - 2026-08-22
 ### Fixes
 - `sso-manager-node` (v2.24.15): Fixed an issue where new spokes with custom site names would be unable to join the master due to the `siteIsFresh` check incorrectly identifying their bootstrap-seeded OAuth clients as operator-created.
 
-## [3.21.16] - $(date +%Y-%m-%d)
+## [3.21.16] - 2026-08-22
 ### Known Issues Documented
 - Added `docs/KNOWN_ISSUES.md` detailing operational footguns, security tradeoffs, and behavioral sharp edges (such as fire-and-forget replication, manual mesh peering, identical signing keys, and write-forwarding nuances).
 
-### Fixes & CI
-- Added `test/multisite_join_e2e.js` test to CI pipeline (`.github/workflows/ci.yml`).
+### Fixes
 - Added check in `setup.sh` to ensure `10.0.0.0/8` routing exists for master host, warning if missing.
 
 ### Submodules Updated
