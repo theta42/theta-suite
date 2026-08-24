@@ -88,9 +88,20 @@ generated, rendered into a config once, and forgotten — it is not stored, not
 recoverable, and not logged. If you lose it, delete the device and enrol it
 again.
 
-Devices running **theta-agent** are configured over the agent's existing
-connection: no file copying, no QR code. Everything else gets a config to paste
-or scan.
+Devices running **theta-agent** enrol themselves. The agent generates a
+WireGuard keypair on first connect, keeps the private half on the machine
+(`/etc/theta42/wg_private.key`, root-only; `%ProgramData%\Theta42\wg\private.key`
+on Windows) and sends only the public half up. So an installed agent appears
+here on its own, with no file copying and no QR code — and because the key is
+stable and enrolment is idempotent by agent, reconnecting converges on the one
+device row rather than adding another.
+
+An admin sees every device at the site under **Network → Devices**, with its
+owner and an `agent` badge on the self-enrolled ones. A non-admin sees their
+own.
+
+Everything else — phones, a router, anything without an agent — gets a config to
+paste or scan, exactly as above.
 
 Each device is given an address from its site's pool and can reach every site
 in the cluster.
@@ -110,16 +121,26 @@ A device can send its internet traffic out of another site — useful for
 reaching something that only accepts connections from a known address, or for
 appearing to be somewhere else.
 
-Two separate things have to be true:
+Every site marked **offers an exit** (Network → Sites) is usable by everyone.
+That flag is on by default, so a site that joins the mesh joins the exit pool —
+clear it to take a site out again, for a metered link say.
 
-1. The exit site is marked **offers an exit** (Network → Sites). That is the
-   site saying it is *willing* to carry traffic.
-2. The user has been **granted** that exit (Network → Exit Access, admin only).
-   Willingness is not permission.
+*Extra exit access* (Network → Exit Access, admin only) is for the other case:
+handing one user a site that is **not** in the shared pool. It is no longer a
+prerequisite for the sites that are.
 
-Then the user picks it per device. Changing the exit **does not reconfigure the
-device** — no reconnect, no new config, no QR code. The gateway rewrites a
-single routing rule.
+> This used to require both — the site willing *and* an explicit per-user grant.
+> Both defaulted closed, which meant a fresh deployment had no usable exit
+> anywhere and nothing said why.
+
+The user then picks an exit per device, from the Directory (Network → Devices)
+or from the agent's tray menu on the machine itself.
+
+**What a change costs.** Switching between two exits is handled entirely at the
+gateway — no reconnect, no new config, no QR code. But turning an exit *on or
+off* changes what the device tunnels: everything (`0.0.0.0/0`) versus just the
+mesh (`10.0.0.0/8` + `172.24.0.0/16`). Devices running theta-agent are sent the
+new config automatically; a device set up by hand needs its config re-exported.
 
 ### Why each exit is a separate tunnel
 

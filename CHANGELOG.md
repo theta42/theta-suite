@@ -1,3 +1,26 @@
+## [3.24.0] - 2026-08-24
+
+The mesh half of the suite: agents join the network by themselves, every site
+carries traffic, and the VPN controls on a laptop finally do something.
+
+### Fixes
+- **"Auto-connect VPN when away" did nothing on any host** — two independent causes, either fatal on its own. The capability gating the whole path (`capabilities.wireguard`) was never written by the installer, so it was false by omission rather than by anyone's decision. And "away" could never be detected: the agent read a `site_public_ip` that **nothing in the suite has ever sent**, and treated an unknown value as "home".
+- **`jump → mesh` showed no devices.** Nothing created a mesh device except an admin doing it by hand, and the agent had no WireGuard key material at all — so a pushed config could not have come up either, placeholder private key and all.
+- **No site was a usable internet exit.** Two gates, both closed by default, with nothing in the UI explaining why the picker was empty.
+
+### Enhancements
+- **Agents enrol themselves into the mesh.** The agent generates a WireGuard keypair, keeps the private half on the host, and registers only the public half — so an installed agent shows up as a device in the Directory and on its site gateway with nothing copied by hand.
+- **Every site is a usable exit.** `exitOpen` defaults on; per-user grants remain as an *additional* path for handing someone a site that is not in the shared pool. A one-time boot backfill opens sites that predate the change, exactly once.
+- **Exit picking from both ends** — the Directory's device list and the agent's own tray menu, from the same set. Changing an exit now pushes the new config to agent-backed devices automatically, through one shared code path rather than the two that had drifted apart.
+- **Home/away by reachability**, with public-IP comparison demoted to a fallback (it is wrong under CGNAT and at multi-WAN sites). Unknown now means *away*, which is the safe direction: a false "home" silently disables auto-VPN.
+
+### Documentation
+- `docs/jump-host/mesh.md` described the old two-gate exit policy, and repeated a "changing an exit does not reconfigure the device" claim that holds only *between* exits — turning one on or off changes what the device tunnels. Both corrected, plus agent self-enrolment and where the private key lives.
+
+### Submodules Updated
+- `theta-agent`: bumped to **v2.11.0** — WireGuard identity and mesh self-enrolment; internet-exit picker in the tray; auto-VPN fixed; home detection rewritten around reachability; `PROTOCOL.md` raised to v1.3.0, documenting four live signed commands (`wireguard_apply`, `wireguard_remove`, `desktop_control`, `shutdown`) that had never been written down, and the tray IPC protocol, which had no documentation anywhere. 30 new tests.
+- `sso-manager-node`: bumped to **v2.26.0** — exit policy opened up with a once-only migration; three agent-facing mesh endpoints; home-detection hints in the config push; admins can finally see agent-enrolled devices (the mesh page only ever listed the caller's own, and self-enrolled devices belong to whoever enrolled the agent). **30 of 61 test files were never running**; 13 of them pass standalone and are now wired in — 43 suites / 477 tests, up from 30 / 390.
+
 ## [3.23.0] - 2026-08-23
 
 ### Fixes
