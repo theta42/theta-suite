@@ -1,3 +1,11 @@
+## [3.24.1] - 2026-08-24
+
+### Fixes
+- **theta-agent v2.11.0 shipped without any Windows artifacts**, so `releases/latest` had no `setup.exe` and no Windows agent, tray or helper binaries — Windows installs pointing at it were broken. A test added in 2.11.0 asserted the WireGuard key file's Unix mode unconditionally; Windows has no POSIX mode bits (Go reports `0666` for any file it created), so it failed the Windows build job, which runs `go test` before compiling the installer. Linux installs were unaffected — those binaries published normally.
+
+### Submodules Updated
+- `theta-agent`: bumped to **v2.11.1** — Windows build fixed; all 7 Windows artifacts published again. No production code changed between 2.11.0 and 2.11.1.
+
 ## [3.24.0] - 2026-08-24
 
 The mesh half of the suite: agents join the network by themselves, every site
