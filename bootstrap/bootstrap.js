@@ -600,10 +600,16 @@ async function seedDirectory(token, clientId, jumpClientId) {
 	// resources to fix their services being parented to the stack host; that
 	// solved the parenting problem with the wrong tool. The right tool already
 	// existed: `kind: 'container'` (see seedPlugins' Docker discovery, which
-	// already attaches `docker-theta-suite-proxy` etc. under these services
-	// correctly) sits one layer below `service`, same as `sso-manager` and
-	// `openbao` already do. So: no synthetic hosts — Proxy's and jump-host's
-	// services parent directly onto the stack host, same as everything else.
+	// attaches `docker-theta-suite-proxy` etc. under these services) sits one
+	// layer below `service`, same as `sso-manager` and `openbao` already do.
+	// So: no synthetic hosts — Proxy's and jump-host's services parent directly
+	// onto the stack host, same as everything else.
+	//
+	// Note the slugs below are site-scoped (`proxy-${SITE_SLUG}`), and the bare
+	// name survives only as an altSlug this file consults on lookup. The Docker
+	// plugin needs the same suffix to name them; seedPlugins passes it as
+	// `serviceSuffix`. Until it did, every container edge named a parent that
+	// did not exist and the stack's own containers arrived unparented.
 
 	await ensure('service', SITE_NAME && SITE_NAME !== 'local' ? `SSO Manager (${SITE_NAME})` : 'SSO Manager', `sso-manager-${SITE_SLUG}`, host.id, {
 		address: `https://${SSO_HOST}`,
@@ -761,10 +767,47 @@ async function seedPlugins(token) {
 		return res.json();
 	}
 
+	async function pluginPatch(id, body) {
+		const res = await fetch(`${SSO_INTERNAL}/api/plugins/${id}`, {
+			method: 'PUT',
+			headers: { 'auth-token': token, 'Content-Type': 'application/json' },
+			body: JSON.stringify(body),
+		});
+		if (!res.ok) {
+			const text = await res.text().catch(() => '');
+			throw new Error(`PUT /api/plugins/${id} failed (${res.status}): ${text}`);
+		}
+		return res.json();
+	}
+
+	// Keeping an existing instance is right -- its config is operator-editable
+	// and must not be stomped on every boot. But a config KEY this bootstrap
+	// has since learned to set, and which the instance has never had, is not an
+	// operator choice: it is a gap. Backfilling only absent keys upgrades an
+	// existing install without touching anything a human may have changed.
 	async function ensurePlugin({ pluginType, name, slug, config }) {
 		const existing = ((await pluginGet('')).results) || [];
-		if (existing.some((i) => i.slug === slug)) {
-			log(`  plugins: '${slug}' exists — keeping`);
+		const found = existing.find((i) => i.slug === slug);
+		if (found) {
+			const have = found.config || {};
+			const missing = {};
+			for (const [k, v] of Object.entries(config || {})) {
+				if (v !== '' && v != null && have[k] === undefined) missing[k] = v;
+			}
+			if (Object.keys(missing).length === 0) {
+				log(`  plugins: '${slug}' exists — keeping`);
+				return;
+			}
+			if (!found.id) {
+				log(`  plugins: '${slug}' exists — cannot backfill ${Object.keys(missing).join(', ')} (no instance id)`);
+				return;
+			}
+			try {
+				await pluginPatch(found.id, { config: { ...have, ...missing } });
+				log(`  plugins: '${slug}' exists — backfilled ${Object.keys(missing).join(', ')}`);
+			} catch (e) {
+				log(`  plugins: '${slug}' exists — could not backfill ${Object.keys(missing).join(', ')} (${e.message || e})`);
+			}
 			return;
 		}
 		await pluginPost({ pluginType, name, slug, config });
@@ -788,6 +831,11 @@ async function seedPlugins(token) {
 				// presenting its own five containers as unmanaged discoveries.
 				stackProject: process.env.COMPOSE_PROJECT_NAME || 'theta-suite',
 				hostSlug: HOST_FACTS.name ? `host_${slugify(HOST_FACTS.name)}` : '',
+				// Service resources are seeded above as `<service>-${SITE_SLUG}`.
+				// Without this the plugin emits edges naming a parent that does
+				// not exist, and the stack's own containers end up with no
+				// parent at all.
+				serviceSuffix: SITE_SLUG,
 			},
 		});
 	} catch (e) {
