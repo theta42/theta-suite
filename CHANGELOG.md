@@ -1,3 +1,85 @@
+## [3.29.0] - 2026-08-25
+
+The mesh has never worked on a laptop. Four independent defects, each fatal on
+its own, and every one of them silent — the tray went blue, the Directory
+showed the device enrolled, the gateway held a live peer for it, and no
+traffic ever crossed the tunnel.
+
+The one that hid the rest: **`wg-quick` was not installed.** The WireGuard
+kernel module ships with every supported kernel, so it is easy to conclude
+WireGuard "is present" — but `wg` and `wg-quick` come from a separate
+`wireguard-tools` package a Debian/Ubuntu desktop image does not install, and
+`install.sh` neither installed nor checked for it. From a real host:
+
+```
+22:49:16 [mesh] enrolled as "william-HP-ENVY-…" at 10.1.128.2 (site 1)
+22:50:01 Applying WireGuard peer config...
+22:50:01 WireGuard apply failed: wg-quick up theta-mesh:
+         exec: "wg-quick": executable file not found in $PATH
+22:54:04 [home-detect] away from home; connecting WireGuard (auto-vpn)
+22:54:04 [home-detect] connect failed: …same…
+```
+
+Enrolment, address allocation, peer construction, config push, home detection
+and auto-VPN all worked. The last step hit a missing binary and logged one
+line. The tray's connect button showed that same raw exec error, which names
+no package and suggests no fix.
+
+Behind it, three more:
+
+- **A freshly enrolled agent never received a peer config.** The only thing
+  that ever pushed one was *changing an exit*, in the web UI, by hand. Two of
+  the three devices on the reference deployment had held no config since the
+  day they were installed.
+- **An away laptop was not protected.** `AllowedIPs` was the split-tunnel pair
+  whenever no exit was selected — every device's starting state — so the
+  tunnel carried the mesh ranges and left everything else on the network the
+  laptop was sitting on.
+- **No site had a DNS resolver, so no client config carried one.** `dnsHost`
+  was configurable from the first release and null everywhere, because nothing
+  ever suggested a value.
+
+### theta-agent v2.15.0
+- `install.sh` installs `wireguard-tools`; the agent preflights for it at
+  startup and names the package for the running distribution; `ApplyWireGuard`
+  refuses before writing a config it cannot run.
+- Coming home no longer tears down an exit chosen on purpose. The rule is
+  stated once, in `tunnelShouldBeUp`: away → up; a **remote** exit → up
+  wherever you are; home with your own site (or nothing) → down.
+- Storing a pushed config and connecting are separate decisions, so a push to
+  a host at home no longer raises the tunnel for the next monitor tick to tear
+  down — which is what makes delivery at enrolment possible.
+- Re-applying over a live tunnel cycles it. `wg-quick up` refuses an existing
+  interface, so changing your exit was the one case that could not work.
+- `install.sh --install-sssd` did nothing: `install_sssd_deps()` was defined
+  and never called once.
+- `wireguard_ready` in discovery — enabled is policy, ready is whether
+  `wg-quick` exists.
+
+### theta-directory v2.30.0
+- Enrolment hands the device its peer config, and every reconnect re-pushes.
+- Agent-managed devices are full tunnel; with no exit the gateway egresses at
+  the device's own site. Manual/QR configs unchanged.
+- `dnsHostDetected` from gateways is taken only while an admin has not set a
+  resolver — reconcile runs on a timer, so publishing a guess as `dnsHost`
+  would overwrite their answer every few minutes.
+- The mesh site table flags a site with **no DNS**.
+- `wireguard_apply` carries `siteId` / `exitSiteId`.
+
+### jump-host v3.5.0
+- Gateways detect and publish the site resolver: first private nameserver in
+  `/etc/resolv.conf`, else the default-route gateway. Loopback stubs
+  (`127.0.0.53`, `127.0.0.11`) and public resolvers are skipped — a resolver a
+  client cannot reach over the tunnel is worse than none.
+
+### Verified
+Reproduced and fixed on a live host: tools installed, config pushed, tunnel
+came up, and auto-VPN dropped it 38s later because the device was home — a
+line only reachable if `WireGuardState()` saw a live interface. The
+cross-site exit path is **not** verified end to end; the spoke remains
+unreachable from the master (no WireGuard peer carries `10.4.168.0/24`, and
+`sso.ron-suite.vm42.us` resolves to the master site's own border).
+
 ## [3.28.0] - 2026-08-25
 
 Closes the known issue recorded in v3.27.0. The root cause was in
