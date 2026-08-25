@@ -1,3 +1,55 @@
+## [3.27.0] - 2026-08-25
+
+Everything left open from the last report, plus the reason the previous release's headline fix could never actually run.
+
+### Fixes
+- **CRITICAL: spoke joins failed outright — v3.26.0's LDAP seeding fix was unreachable.**
+
+  ```
+  [site-join] FAILED: join failed (502): LDAP replica seeding failed and the
+  previous directory was restored: EXDEV: cross-device link not permitted,
+  rename '/var/lib/ldap/data.mdb' -> '/tmp/ldap-preseed-<uuid>/data.mdb'
+  ```
+
+  The existing database was stashed in `os.tmpdir()` before `slapadd` rebuilt the tree. `/var/lib/ldap` is a volume in every deployment we ship and `/tmp` is the container's overlay — confirmed on the live master, devices `1813` and `3145807` — so `rename(2)` crossed a mount boundary and returned `EXDEV` before moving a single file.
+
+  The restore-and-rethrow path added in v3.26.0 did its job, so no spoke was damaged; but no spoke could join, which left the group-destruction fix effective only in principle. Worth recording why hand-testing would have missed it: `mv(1)` falls back to copy+unlink across filesystems, so the same operation typed at a shell succeeds. Node's `fs.rename` does not.
+
+  The stash is now a dot-prefixed directory inside the data directory, on that directory's filesystem by construction. Covered by tests against a real filesystem as well as the mocked one, because the bug was in the interaction with it.
+
+- **A service registered through the agent had no live status and no controls — three independent causes, each fatal on its own.**
+  - The **agent** never reported it. `theta-agent register` runs in its own process: it writes `agent.yml` and notifies the Directory over a one-shot socket. The daemon held its configuration in memory and never re-read the file, so `services:` on the wire stayed as it was at startup. The Directory created the service resource from the registration frame and then received no status sample for it, indefinitely.
+  - The **Directory driver** could not see the agent. Every `AgentManager.getAgentForResource()` call in `theta_agent_driver.js` was made without `await`; the function is `async`, so `!agent.isOnline` was evaluated on a Promise and was always true. `getMetrics` reported offline unconditionally and the live-status panel — which already existed — could never render anything.
+  - Control targeted the wrong name. The driver resolved the unit as `metadata.systemdService || resource.slug`, skipping `metadata.serviceName` (the field the reconciler actually writes), so it fell through to `svc-<host>-<subtype>-<unit>` — not a unit on any host. Every start/stop/restart acted on nothing.
+
+- **Every service subtype was sent to `systemctl`.** Restarting a docker container targeted a unit that does not exist. The command now carries the subtype and the agent dispatches on it, and the action is an allowlist rather than a passthrough into an argv.
+
+- **Re-installing the agent against a rebuilt Directory left the host talking to nothing.** `Credential()` prefers `auth_token` over `join_key`, so a token issued by the *previous* Directory won the preference and was rejected on every connect while the working join key sat in the same file, never tried. `public_key` fails the same way in the other direction — it is the Directory's signing key. The installer now clears both when the join key or the URL changes, and `theta-agent reset-enrollment` does it on demand.
+
+- **The agent installer still replaced a running binary** where the unit was not at the one hardcoded path it checked. It asks systemd now, and finds stray processes through `/proc/<pid>/exe`.
+
+### Added
+- **Live status and control for registered services.** The same coloured dot as a host in the resource tree — green active, red inactive, grey when the agent is offline or has not reported it yet — plus **Start / Restart / Stop** (and **Reload** for systemd units) over the signed command channel. `stop` and `restart` are confirmed and high-risk. Only subtypes with a real lifecycle are offered controls: a timer has no `systemctl start`, and a button that can only fail is worse than none.
+
+- **Any Linux host running theta-agent is a jump target automatically.** Only the stack host was offered, because nothing ever gave an agent-enrolled host the groups the access projection keys on — so every other agent host had to be granted one LDAP group at a time. Installing the agent requires root on the machine *and* a join key from the Directory: the machine is already under management.
+
+  Implemented as the subtype template the report asked for (`services/subtype_templates.js`): one table saying what a resource of a given kind/subType gets automatically. A host with a live agent is reachable by any user whose groups already cover hosts at that site — evaluated by the existing `utils/groups.js` model, not a new rule. Narrow on purpose: hosts only, no iLO/BMC, and only while the agent is still enrolled.
+
+  Run against the live master's real 58-resource catalog with every hand-made grant ignored, this offers all three agent hosts (was one) and leaves the 54 agent-less Proxmox machines out.
+
+- **Services registered by an agent no longer get LDAP groups of their own.** A systemd unit is not an access boundary — whoever administers the host administers its units — and one `svc-<host>-systemd-<unit>_access` pair per unit per host is sprawl with no decision behind it. They inherit access from their host, the Groups tab is hidden for them, and their Access column reads *via host*. A service resource created by hand keeps its groups.
+
+### Security
+- **Access no longer outlives an agent enrolment.** `metadata.agentId` was never cleared when an agent was revoked or deleted, so the new "an agent host is reachable" rule would have granted access through a dead binding. Revoke and delete now unbind the agent from its resources, and the projection is handed the set of agents still enrolled rather than trusting the field — given no such set it grants nothing through that rule.
+
+### Submodules Updated
+- `theta-directory`: **v2.27.0 → v2.28.0** — EXDEV fix, service UI and controls, automatic jump targets, subtype templates.
+- `theta-agent`: **v2.13.0 → v2.14.0** — telemetry-time config reload, service control by subtype, `reset-enrollment`, installer stop/re-key.
+- `jump-host`: **v3.3.8 → v3.3.9** — documents automatic jump targets; records that `isCatalogHost` cannot see the metadata it keys on.
+
+### Known issues
+- `jump-host`'s `isCatalogHost` filter is inert for its own API caller. `managed` and `discovery_sources` are not declared in `@simpleworkjs/directory-schema`'s `METADATA_KEYS`, so both are stripped for any non-admin caller — and `isDirectoryAdmin()` is false for machines. `accessibleHosts()` is unaffected (the SSO applies the rule server-side); `allHosts()`, the admin view, lists unpromoted discovery results. Fixing it means declaring the keys in `directory-schema`, which is not a submodule of this suite.
+
 ## [3.26.0] - 2026-08-24
 
 ### Fixes
