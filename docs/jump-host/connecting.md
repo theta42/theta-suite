@@ -71,6 +71,27 @@ directory auto-creates for each machine). To get access to a new host, an admin
 adds you to that host's access group in the SSO — nothing on the jump host
 changes.
 
+**A host running theta-agent is a jump target automatically.** Installing the
+agent needs root on that machine *and* a join key from the directory, so the
+machine is already under management; requiring a second, per-host grant before
+it could be reached added nothing, and it was the reason a fleet of agent hosts
+offered exactly one target. If your groups already grant access to hosts at
+that site — `god_admin`, `{site}_super_admin`, or the `{site}_hosts_access` /
+`{site}_hosts_admin` aggregate (see [GROUPS](../GROUPS.html)) — every agent host
+at the site is in your picker, with no `<slug>_access` group to create first.
+
+The rule is deliberately narrow:
+
+- only **hosts**, and only subtypes that are a machine you log into. An
+  iLO/BMC out-of-band controller is never offered, agent or not.
+- only while the agent is **still enrolled**. Revoking or deleting an enrolment
+  removes the host immediately.
+- hosts **without** an agent are unchanged — they still need an explicit grant.
+
+Services an agent registered (a systemd unit, a docker container) follow the
+same host: whoever administers the machine administers its units, so they have
+no access groups of their own.
+
 Targets that don't resolve to a host you're allowed to reach are refused (and
 audited). Raw IPs that aren't a known directory host are denied by default.
 
