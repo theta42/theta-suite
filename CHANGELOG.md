@@ -1,3 +1,26 @@
+## [3.28.0] - 2026-08-25
+
+Closes the known issue recorded in v3.27.0. The root cause was in
+`@simpleworkjs/directory-schema`, which is now fixed and published.
+
+### Fixes
+- **jump-host's catalog filter could not see what it keys on.** `isCatalogHost` excludes resources the Directory merely *discovered* and nobody promoted, by reading `managed` and `discovery_sources`. Neither was declared in `@simpleworkjs/directory-schema`'s `METADATA_KEYS`, and the non-admin path of `projectResource()` keeps only the **declared** public allowlist — so both were stripped before they reached jump-host, which is a machine caller and therefore never a directory admin.
+
+  Every resource arrived with neither field, `autoDiscovered` computed `false`, and the filter returned `true` for everything it was asked about — including the unpromoted Proxmox guests and UniFi clients jump-host v3.3.0 believed it had excluded. `accessibleHosts()` escaped only because the Directory applies the same catalog rule server-side before answering `/api/discovery/access/:uid`; `allHosts()`, the admin host view, did not.
+
+  Both keys are public now. Neither is sensitive — `managed` says an operator put the resource in the catalog, `discovery_sources` names the plugin that found it — and both are only ever returned for resources the caller can already reach.
+
+- **jump-host's lockfile was pinning `directory-schema` at 1.0.0** despite a `^1.0.0` range, so it had never received v1.1.0 either. The lockfile is what CI and production install; the range alone was not enough. Both consumers now require `^1.2.0` and lock to it.
+
+### Changed
+- `@simpleworkjs/directory-schema` **1.1.0 → 1.2.0**, published to npm. Besides the two catalog keys it declares the fourteen admin-only keys the suite's reconcilers and discovery plugins write (`serviceName`, `dockerContainer`, `kernel`, `cpu`, `ram_total_gb`, `disk_total_gb`, `public_ip`, `interfaces`, `node`, `status`, `agentId`, `hostId`, `sourceId`, `last_seen`) — no behaviour change from those, but an undeclared key is invisible to every non-admin caller, which is what produced this bug and the one v1.1.0 fixed. A completeness test now holds `METADATA_KEYS` to the keys the suite writes, so the next omission fails CI instead of going quiet in production.
+
+  `agentId`'s declaration records that it is a binding record and **not** proof the enrolment is live: it survives revocation, so anything gating access on an agent must check the agent, not the field — exactly what v3.27.0's access projection had to work around.
+
+### Submodules Updated
+- `theta-directory`: **v2.28.0 → v2.29.0** — `managed` / `discovery_sources` now reach non-admin and machine callers.
+- `jump-host`: **v3.3.9 → v3.4.0** — `isCatalogHost` now actually filters; lockfile un-pinned from 1.0.0.
+
 ## [3.27.0] - 2026-08-25
 
 Everything left open from the last report, plus the reason the previous release's headline fix could never actually run.
