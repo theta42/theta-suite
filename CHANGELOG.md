@@ -1,3 +1,21 @@
+## [3.31.0] - 2026-08-27
+
+setup.sh now stages the theta-agent release's full artifact set into the directory, so every
+artifact is served from /resources/theta-agent/ instead of only the Windows installer — agent
+binaries (linux/windows × amd64/arm64/armv7), tray companions, session helpers, and the Windows
+setup.exe, all SHA-256-verified against the release manifest. `theta-agent update` (v2.16.0+)
+fetches its binary from this directory, so hosts self-update over the LAN and inside an air-gap.
+The Install Agent download modal now lists every staged artifact with version, size, and staging
+state, generated from a new `GET /api/agent/artifacts` endpoint instead of a hardcoded three-row
+table.
+
+### theta-directory v2.32.0
+- `GET /api/agent/artifacts` lists the staged theta-agent release artifacts (name, purpose, size, staging state, release version parsed from the versioned installer name).
+- Install Agent → Download binaries tab generated from the endpoint — 14 artifacts: install.sh, Windows installer, SHA256SUMS, Linux/Windows agent binaries, tray companions, session helpers; missing artifacts render greyed out.
+
+### setup.sh
+- Stages every theta-agent release artifact from the pinned release (previously Windows installer only): the full `SHA256SUMS` set is fetched, each artifact downloaded and SHA-256-verified, stale artifacts from older pins pruned.
+
 ## [3.30.0] - 2026-08-27
 
 White-label branding is now stored in the directory and replicated to all
@@ -3013,8 +3031,6 @@ and exposes a fixed, role-scoped personal-secrets UI.
 - Added OpenBao (Vault) container for secrets management and native UI proxying.
 - Updated `sso-manager-node` to v1.14.0 (Discovery and Vault integration).
 - Updated `proxy` to v1.12.0.
-
-## [Unreleased]
 
 ## [1.23.0] - 2026-07-31
 
