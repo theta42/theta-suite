@@ -316,6 +316,104 @@ if [[ -n "$CFG_HTTP_PROXY" ]]; then
 	info "Using HTTP proxy for docker build + containers: $CFG_HTTP_PROXY"
 fi
 
+# semver_gt A B: true when A is a strictly NEWER vX.Y.Z than B. Numeric
+# per-component comparison (lexical [[ > ]] breaks at v10).
+semver_gt() {
+	local a="${1#v}" b="${2#v}"
+	local ai bi
+	IFS=. read -r -a a <<< "$a"
+	IFS=. read -r -a b <<< "$b"
+	for i in 0 1 2; do
+		ai="${a[$i]:-0}"; bi="${b[$i]:-0}"
+		[[ "$ai" =~ ^[0-9]+$ ]] || ai=0
+		[[ "$bi" =~ ^[0-9]+$ ]] || bi=0
+		(( ai > bi )) && return 0
+		(( ai < bi )) && return 1
+	done
+	return 1
+}
+
+# ── 0b. Spoke version parity: never outrun the master ─────────────────────────
+# A spoke's components (sso-manager, proxy, jump-host) run in a cluster that
+# multi-master-replicates with the master, so a spoke must never run a NEWER
+# theta-suite than the master. Without this, a spoke cloned/updated from a
+# newer checkout would bring up newer code against an older master — the exact
+# skew that breaks replication compatibility. On a spoke (spoke.env present),
+# query the master's suite version and converge this checkout onto it:
+#   * first install: the checkout MUST match the master (a newer checkout is a
+#     hard error; an older one is fast-forwarded to the master's version)
+#   * re-run/update: never move PAST the master (newer checkout is held back)
+# On a master, nothing changes: it is the version authority. The master
+# reports its version via /api/site/ping.suiteVersion (injected into the
+# container as THETA_SUITE_VERSION). A master older than theta-suite v3.32.0
+# has no suiteVersion (null) — parity cannot be enforced, so we proceed and
+# warn, matching the previous behavior rather than breaking old clusters.
+# Local-only overrides: SKIP_VERSION_CHECK=1 disables parity entirely;
+# CFG_SUITE_VERSION pins a target instead of asking the master.
+if (( IS_SPOKE )) && [[ "${SKIP_VERSION_CHECK:-0}" != "1" ]]; then
+	MASTER_BASE="${CFG_MASTER_DIRECTORY_URL:-}"
+	if [[ -z "$MASTER_BASE" && -f "$CONFIG_DIR/site.json" ]]; then
+		MASTER_BASE="$(node -e 'try{const fs=require("fs");process.stdout.write((JSON.parse(fs.readFileSync(process.argv[1],"utf8")).masterUrl)||"")}catch(e){}' "$CONFIG_DIR/site.json" 2>/dev/null || true)"
+	fi
+	LOCAL_VER="$(git describe --tags --exact-match HEAD 2>/dev/null || git describe --tags 2>/dev/null || echo unknown)"
+	if [[ -n "${CFG_SUITE_VERSION:-}" ]]; then
+		TARGET_VER="${CFG_SUITE_VERSION}"
+		info "Suite version pinned by config: ${TARGET_VER}"
+	elif [[ -n "$MASTER_BASE" && -n "${CFG_MASTER_DIRECTORY_JOIN_KEY:-}" ]]; then
+		MASTER_PING="$(curl -fsS -m 15 -X POST "${MASTER_BASE%/}/api/site/ping" \
+			-H "Authorization: Bearer ${CFG_MASTER_DIRECTORY_JOIN_KEY}" -H 'Content-Type: application/json' -d '{}' 2>/dev/null || true)"
+		TARGET_VER="$(printf '%s' "$MASTER_PING" | grep -o '"suiteVersion"[[:space:]]*:[[:space:]]*"[^"]*"' | sed -E 's/.*:[[:space:]]*"([^"]*)".*/\1/' || true)"
+		if [[ -n "$TARGET_VER" ]]; then
+			info "Master (${MASTER_BASE}) runs theta-suite ${TARGET_VER}; spoke checkout is ${LOCAL_VER}."
+		else
+			warn "Master did not report a suite version (master older than theta-suite v3.32.0, or unreachable) — cannot enforce spoke parity; continuing with the current checkout. Set SKIP_VERSION_CHECK=1 to silence, or CFG_SUITE_VERSION to pin a target."
+		fi
+	else
+		warn "Spoke mode but no master URL/join key to check versions against (offline?); continuing with the current checkout. Set SKIP_VERSION_CHECK=1 to silence, or CFG_SUITE_VERSION to pin a target."
+	fi
+
+	# If the master's version is not exactly our tag, converge the checkout.
+	if [[ -n "$TARGET_VER" && "$TARGET_VER" != "$LOCAL_VER" && "$TARGET_VER" != "unknown" ]]; then
+		if git rev-parse --verify -q "refs/tags/${TARGET_VER}" >/dev/null 2>&1; then
+			info "Converging theta-suite checkout to ${TARGET_VER} (master's version)..."
+			if git checkout -q "$TARGET_VER"; then
+				info "Checkout now at ${TARGET_VER}. Re-running setup.sh with the matched version..."
+				THETA_SUITE_REEXECED=1 exec "$0" "$@"
+			else
+				die "Could not check out ${TARGET_VER} (master's version) — refusing to run a version-skewed spoke."
+			fi
+		else
+			# Target tag not in this clone. The direction decides what is
+			# safe: if the master is NEWER than this checkout, a fetch can
+			# reach the tag (normal update — converge); if the master is
+			# OLDER, this checkout is a newer spoke than the master — the
+			# forbidden direction — so refuse to run skew.
+			LOCAL_NUM="$(printf '%s' "$LOCAL_VER" | sed -E 's/^v?([0-9]+\.[0-9]+\.[0-9]+).*/\1/')"
+			TARGET_NUM="$(printf '%s' "$TARGET_VER" | sed -E 's/^v?([0-9]+\.[0-9]+\.[0-9]+).*/\1/')"
+			if [[ "$LOCAL_NUM" == "$TARGET_NUM" ]]; then
+				# Same numeric version, different tag spelling (e.g. local
+				# tag missing) — treat as matched.
+				info "Suite version matches the master (${TARGET_VER}); continuing."
+			elif git fetch --tags -q 2>/dev/null && git rev-parse --verify -q "refs/tags/${TARGET_VER}" >/dev/null 2>&1; then
+				info "Fetched ${TARGET_VER} (master's version); converging checkout..."
+				if git checkout -q "$TARGET_VER"; then
+					info "Checkout now at ${TARGET_VER}. Re-running setup.sh with the matched version..."
+					THETA_SUITE_REEXECED=1 exec "$0" "$@"
+				else
+					die "Could not check out ${TARGET_VER} (master's version) — refusing to run a version-skewed spoke."
+				fi
+			elif semver_gt "$LOCAL_NUM" "$TARGET_NUM"; then
+				die "This spoke checkout (${LOCAL_VER}) is NEWER than the master (${TARGET_VER}) and the master's version is not available locally. A spoke must never run past the master — check out ${TARGET_VER} (or update the master first), then re-run setup.sh. Set SKIP_VERSION_CHECK=1 to override (not recommended)."
+			else
+				# Master is newer but its tag is unreachable (offline clone):
+				# stay behind rather than run ahead — the master advances
+				# spokes by releasing; a spoke must not outrun it.
+				warn "Master runs ${TARGET_VER} (newer than this checkout ${LOCAL_VER}) but its tag is not available locally (offline?). Staying on ${LOCAL_VER} — the spoke will catch up when the master's release is reachable. Set SKIP_VERSION_CHECK=1 to silence."
+			fi
+		fi
+	fi
+fi
+
 # ── 1. Update submodules to their latest release tag, verify build contexts ───
 # Submodules track release tags (vX.Y.Z), not the tip of master -- so
 # "update" means "move to the newest tag", not "move to the newest commit".
@@ -333,7 +431,6 @@ if [[ "${SKIP_SUBMODULE_UPDATE:-0}" != "1" ]]; then
 
 	# jump-host is a core component — always tracked + built.
 	SUBMODULES=(sso-manager-node proxy jump-host)
-	info "Updating submodules to their latest release tag (${SUBMODULES[*]})..."
 
 	# Each submodule is its own .git directory with no shared state with the
 	# others, so fetch+checkout runs concurrently instead of three sequential
@@ -375,15 +472,22 @@ if [[ "${SKIP_SUBMODULE_UPDATE:-0}" != "1" ]]; then
 		fi
 	}
 
-	SM_TMPDIR="$(mktemp -d)"
-	for sm in "${SUBMODULES[@]}"; do
-		( sm_update_one "$sm" ) > "$SM_TMPDIR/$sm.log" 2>&1 &
-	done
-	wait
-	for sm in "${SUBMODULES[@]}"; do
-		[[ -f "$SM_TMPDIR/$sm.log" ]] && cat "$SM_TMPDIR/$sm.log"
-	done
-	rm -rf "$SM_TMPDIR"
+	# Spoke: submodules stay on the pinned commits (they match the master —
+	# the version-parity step guaranteed the checkout does). Master: advance
+	# every component to its latest release tag, as before.
+	if (( IS_SPOKE )) && [[ "${SKIP_VERSION_CHECK:-0}" != "1" ]]; then
+		info "Keeping submodules at their pinned commits (spoke matched to master ${TARGET_VER:-})."
+	else
+		SM_TMPDIR="$(mktemp -d)"
+		for sm in "${SUBMODULES[@]}"; do
+			( sm_update_one "$sm" ) > "$SM_TMPDIR/$sm.log" 2>&1 &
+		done
+		wait
+		for sm in "${SUBMODULES[@]}"; do
+			[[ -f "$SM_TMPDIR/$sm.log" ]] && cat "$SM_TMPDIR/$sm.log"
+		done
+		rm -rf "$SM_TMPDIR"
+	fi
 else
 	info "Skipping submodule update (SKIP_SUBMODULE_UPDATE=1)."
 fi
@@ -1218,6 +1322,11 @@ info "Starting bao-renewer (service-token renewal sidecar)..."
 # hash from inside the Docker build context. Resolve it on the host (where
 # the submodule DOES resolve correctly) and pass it in as a build arg; see
 # docker-compose.yml and sso-manager-node's Dockerfile.openldap.
+# Suite version of this deployment — what spokes must match. Computed from the
+# checkout tag (never "latest"): the version authority for the whole cluster.
+THETA_SUITE_VERSION="$(git describe --tags 2>/dev/null || echo unknown)"
+export THETA_SUITE_VERSION
+env_upsert THETA_SUITE_VERSION "$THETA_SUITE_VERSION"
 SSO_GIT_COMMIT="$(git -C sso-manager-node rev-parse --short HEAD 2>/dev/null || echo unknown)"
 export SSO_GIT_COMMIT
 env_upsert SSO_GIT_COMMIT "$SSO_GIT_COMMIT"
