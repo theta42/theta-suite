@@ -1238,40 +1238,70 @@ env_upsert PROXY_GIT_COMMIT "$PROXY_GIT_COMMIT"
 [[ "${CFG_LDAP_MMR_MANUAL:-false}" != "true" && -f "$CONFIG_DIR/ldap-replication.env" ]] && parse_kv_file "$CONFIG_DIR/ldap-replication.env"
 
 # Stage the theta-agent install resources the Directory serves from
-# /resources/theta-agent/... (bind-mounted from $CONFIG_DIR/resources). The
-# Windows setup.exe is a release artifact, not committable, so fetch the one
-# that matches THIS suite's pinned theta-agent version (the submodule tag) --
-# "latest" drifts and would mislead the SSO's Install Agent page.
+# /resources/theta-agent/... (bind-mounted from $CONFIG_DIR/resources). All
+# release artifacts -- Linux/Windows agent binaries, tray companions, helpers,
+# and the Windows setup.exe -- are release assets, not committable, so fetch
+# the ones matching THIS suite's pinned theta-agent version (the submodule
+# tag): "latest" drifts and would mislead the SSO's Install Agent page.
+# `theta-agent update` (v2.16.0+) fetches its binary from
+# /resources/theta-agent/<artifact> and verifies it against SHA256SUMS, so
+# every host must be able to get every artifact from this directory.
 mkdir -p "$CONFIG_DIR/resources/theta-agent"
 cp -f sso-manager-node/nodejs/public/resources/theta-agent/install.sh \
       "$CONFIG_DIR/resources/theta-agent/install.sh" 2>/dev/null || true
 AGENT_TAG="$(git -C theta-agent describe --tags --exact-match HEAD 2>/dev/null || git -C theta-agent describe --tags 2>/dev/null || true)"
 if [[ -n "$AGENT_TAG" ]]; then
-	WIN_SETUP="theta-agent-${AGENT_TAG#v}-windows-amd64-setup.exe"
-	WIN_SETUP_URL="https://github.com/theta42/theta-agent/releases/download/${AGENT_TAG}/${WIN_SETUP}"
-	info "Staging Windows theta-agent installer ${WIN_SETUP} for the Directory to serve..."
-	if ! curl -fsSL -o "$CONFIG_DIR/resources/theta-agent/$WIN_SETUP" "$WIN_SETUP_URL" || [[ ! -s "$CONFIG_DIR/resources/theta-agent/$WIN_SETUP" ]]; then
-		rm -f "$CONFIG_DIR/resources/theta-agent/$WIN_SETUP"
-		warn "Could not download ${WIN_SETUP} from ${WIN_SETUP_URL}. The Directory's Install Agent page will not be able to serve a Windows installer until it is staged (re-run setup.sh, or place the file in $CONFIG_DIR/resources/theta-agent/)."
-	else
-		if curl -fsSL -o "$CONFIG_DIR/resources/theta-agent/SHA256SUMS" \
-			"https://github.com/theta42/theta-agent/releases/download/${AGENT_TAG}/SHA256SUMS" \
+	RELEASE_URL="https://github.com/theta42/theta-agent/releases/download/${AGENT_TAG}"
+	if curl -fsSL -o "$CONFIG_DIR/resources/theta-agent/SHA256SUMS" \
+			"${RELEASE_URL}/SHA256SUMS" \
 			&& [[ -s "$CONFIG_DIR/resources/theta-agent/SHA256SUMS" ]]; then
-			expected="$(awk -v f="$WIN_SETUP" '$2==f {print $1}' "$CONFIG_DIR/resources/theta-agent/SHA256SUMS")"
-			actual="$(sha256sum "$CONFIG_DIR/resources/theta-agent/$WIN_SETUP" | awk '{print $1}')"
-			if [[ -n "$expected" && "$expected" != "$actual" ]]; then
-				warn "SHA256 mismatch for ${WIN_SETUP}; removing the staged file."
-				rm -f "$CONFIG_DIR/resources/theta-agent/$WIN_SETUP"
-			else
-				# Stable-name alias so the SSO's Install Agent page can serve
-				# "the current Windows installer" without knowing the version.
-				cp -f "$CONFIG_DIR/resources/theta-agent/$WIN_SETUP" \
+		staged=0
+		manifest_files=""
+		while read -r expected file; do
+			[[ -n "$file" ]] || continue
+			manifest_files="${manifest_files} ${file}"
+			info "Staging theta-agent artifact ${file} for the Directory to serve..."
+			if ! curl -fsSL -o "$CONFIG_DIR/resources/theta-agent/$file" "${RELEASE_URL}/${file}" || [[ ! -s "$CONFIG_DIR/resources/theta-agent/$file" ]]; then
+				rm -f "$CONFIG_DIR/resources/theta-agent/$file"
+				warn "Could not download ${file} from ${RELEASE_URL}/${file}. It will not be served until it is staged (re-run setup.sh, or place the file in $CONFIG_DIR/resources/theta-agent/)."
+				continue
+			fi
+			actual="$(sha256sum "$CONFIG_DIR/resources/theta-agent/$file" | awk '{print $1}')"
+			if [[ "$actual" != "$expected" ]]; then
+				warn "SHA256 mismatch for ${file}; removing the staged file."
+				rm -f "$CONFIG_DIR/resources/theta-agent/$file"
+				continue
+			fi
+			staged=1
+		done < "$CONFIG_DIR/resources/theta-agent/SHA256SUMS"
+		if [[ "$staged" == "1" ]]; then
+			# Stable-name alias so the SSO's Install Agent page can serve
+			# "the current Windows installer" without knowing the version.
+			if [[ -f "$CONFIG_DIR/resources/theta-agent/theta-agent-${AGENT_TAG#v}-windows-amd64-setup.exe" ]]; then
+				cp -f "$CONFIG_DIR/resources/theta-agent/theta-agent-${AGENT_TAG#v}-windows-amd64-setup.exe" \
 					"$CONFIG_DIR/resources/theta-agent/theta-agent-windows-amd64-setup.exe"
 			fi
+			# Prune artifacts left behind by an older pinned run: the
+			# directory must serve exactly the current release's set, or a
+			# stale versioned file could be mistaken for the live one.
+			keep="${manifest_files} theta-agent-windows-amd64-setup.exe"
+			for f in "$CONFIG_DIR/resources/theta-agent"/theta-agent-*; do
+				[[ -f "$f" ]] || continue
+				base="${f##*/}"
+				case " ${keep} " in
+					*" ${base} "*) : ;;
+					*) rm -f "$f" ;;
+				esac
+			done
+			info "Staged theta-agent artifacts from ${AGENT_TAG} for the Directory to serve."
+		else
+			warn "No theta-agent artifacts staged from ${AGENT_TAG}; the Directory will not serve agent binaries (install.sh is still staged)."
 		fi
+	else
+		warn "Could not download the SHA256SUMS manifest for ${AGENT_TAG}. No theta-agent artifacts staged (install.sh is still staged); re-run setup.sh, or place the artifacts in $CONFIG_DIR/resources/theta-agent/."
 	fi
 else
-	warn "Could not resolve the pinned theta-agent version; skipping the Windows installer fetch (install.sh is still staged)."
+	warn "Could not resolve the pinned theta-agent version; skipping theta-agent artifact staging (install.sh is still staged)."
 fi
 
 # Build both images concurrently before starting either. compose v2 already
