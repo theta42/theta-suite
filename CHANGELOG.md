@@ -1,3 +1,33 @@
+## [3.32.0] - 2026-08-27
+
+Discovery resources are fixed end to end: Proxmox guest slugs are now hostname+MAC based
+(unique across clusters — the old `lxc-<vmid>` scheme let two clusters collide on the same
+vmid and double-parent the whole tree), name matching never merges MAC/IP-bearing resources,
+and discovery edges are reparented and pruned so a resource can never keep a parent its
+source stopped reporting. Agent-discovered hosts get a MAC-based identity. theta-agent local
+discovery is now opt-in and https-only, so an agent can no longer break a whole host's DNS
+with an unverified /etc/hosts override. Spokes converge their checkout onto the master's
+version — a spoke never runs past its master.
+
+### theta-directory v2.33.0
+- Proxmox guest slugs are hostname+MAC based (`lxc-emby-aabbcc000001`); MAC-less guests fall back to name+vmid.
+- Name/slug matching never merges a resource that carries a MAC or IP (kills cross-cluster lxc-101/lxc-213 collisions).
+- Discovery edges are reparented and pruned: payload edges replace stale discovery-created parents; edges a source no longer reports are deleted; edges carry a `source` field, manual edges untouched.
+- Agent-discovered hosts get a MAC-based identity (agent reports its primary NIC MAC).
+- `GET /api/agent/artifacts` lists the staged theta-agent release artifacts (name, purpose, size, staging state, version).
+- Install Agent → Download binaries tab generated from the endpoint — all 14 artifacts with version, size, and staging state.
+- `/api/site/ping` reports `suiteVersion` for spoke version parity.
+
+### theta-agent v2.18.0
+- Local discovery is opt-in (`local_discovery: true`) and only overrides https directories whose certificate the LAN address actually serves.
+- Discovery reports the host's primary MAC (`mac_address`).
+- `theta-agent update` stages the download next to the binary — fixes "invalid cross-device link" on hosts where /tmp is a different filesystem.
+
+### setup.sh
+- Spoke version parity: a spoke converges its checkout onto the master's version (never past it); submodules stay at the master's pinned versions on spokes.
+- Stages every theta-agent release artifact from the pinned release (full `SHA256SUMS` set, SHA-256-verified, stale artifacts pruned).
+- `THETA_SUITE_VERSION` injected into the sso container and served via `/api/site/ping`.
+
 ## [3.31.0] - 2026-08-27
 
 setup.sh now stages the theta-agent release's full artifact set into the directory, so every

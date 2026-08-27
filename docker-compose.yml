@@ -97,6 +97,10 @@ services:
       - HTTP_PROXY=${CFG_HTTP_PROXY:-}
       - HTTPS_PROXY=${CFG_HTTPS_PROXY:-}
       - NO_PROXY=${CFG_NO_PROXY:-}
+      # Suite version of this deployment (git describe of the theta-suite
+      # checkout, injected by setup.sh). Served via /api/site/ping so spokes
+      # can keep their checkouts matched to the master's.
+      - THETA_SUITE_VERSION=${THETA_SUITE_VERSION:-}
     volumes:
       # The host docker socket so the bundled Docker discovery plugin (seeded as
       # 'docker-local' with socketPath /var/run/docker.sock) can list containers.
