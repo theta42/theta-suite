@@ -265,7 +265,9 @@ survives recreation; `down -v` wipes them. Redis is persisted with AOF + RDB
 on those volumes. The gateway no longer has containers: it runs on the host
 as the `theta-gateway` systemd service, and its WireGuard identity/sessions
 live in the host Redis at `/var/lib/theta-gateway/redis` (see
-`docs/jump-host/deployment.md`) — back that up separately. For the full
+`docs/jump-host/deployment.md`) — back that up separately. SSH host keys live
+at `/opt/theta-suite/.persist/jump-host/keys` and are backed up with the
+theta-suite checkout. For the full
 manual-backup + restore runbook (full / Redis-only / LDAP-only, with the
 AOF-vs-RDB note), see the *Backups and restore* section of the
 [README](https://github.com/theta42/theta-suite#backups-and-restore). OpenBao

@@ -105,7 +105,8 @@ are left alone.
 | `/opt/theta-gateway` | the application (replaced wholesale on upgrade) |
 | `/etc/theta-gateway/gateway.env` | settings — written once, never overwritten |
 | `/etc/theta-gateway/jump-secrets.js` | LDAP bind, API token, OIDC (from `setup.sh`) |
-| `/var/lib/theta-gateway` | SSH host keys and Redis data |
+| `/var/lib/theta-gateway` | Redis data (WireGuard identity, sessions) |
+| `/opt/theta-suite/.persist/jump-host/keys` | SSH host keys (survives rebuilds/backups) |
 
 ```
 systemctl status theta-gateway
@@ -116,6 +117,10 @@ sudo ./jump-host/install.sh --uninstall
 `--uninstall` deliberately **keeps** `/var/lib/theta-gateway`, because that is
 where this gateway's WireGuard identity lives and every peer in the cluster
 holds its public half. Deleting it silently breaks every tunnel to this site.
+
+SSH host keys live at `/opt/theta-suite/.persist/jump-host/keys` — outside the
+application tree so they survive container rebuilds, host reinstalls, and get
+backed up with the rest of the theta-suite checkout.
 
 It runs as **root**. It creates WireGuard interfaces, writes the routing table,
 sets `net.*` sysctls in the host namespace and installs NAT and NETMAP rules —

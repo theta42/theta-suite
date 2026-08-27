@@ -1045,7 +1045,7 @@ module.exports = {
 \t},
 \tssh: {
 \t\tlistenPort: 2222,
-\t\thostKeyPath: '/var/lib/jump-host/keys',
+\t\t		hostKeyPath: '/opt/theta-suite/.persist/jump-host/keys',
 \t\tpasswordAuth: 'off',
 \t\tkeyComment: ${JSON.stringify(`jump-host@${siteName}`)},
 \t},
