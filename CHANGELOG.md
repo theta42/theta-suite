@@ -1,3 +1,28 @@
+## [3.30.0] - 2026-08-27
+
+White-label branding is now stored in the directory and replicated to all
+sites automatically. Set the organization name, logo, and icon once — in the
+Configuration → Branding tab — and every site and every enrolled agent shows
+it. No OpenBao, no secrets, no per-spoke configuration: branding lives on the
+master Site resource's metadata and rides the existing catalog export/import
+to every spoke. Agents receive it over the WebSocket config frame and display
+it in the tray and on the Windows logon tile.
+
+### theta-directory v2.31.0
+- Branding stored on master Site resource metadata (`metadata.branding`), replicates to spokes via catalog export/import.
+- New `GET/POST /api/conf/branding` endpoints read/write branding via the directory.
+- Boot-time `dir_branding` overlay applies directory branding over `conf`.
+- `organization_name` pushed to agents in the WebSocket `config` frame.
+- Footer, login page, and email templates use configured values instead of hardcoded theta42 references.
+- CSS transitions scoped to interactive elements (fixes layout thrash from `*` selector).
+
+### theta-agent v2.17.0
+- `organization_name` from the directory config frame displayed in tray title/tooltip.
+- Windows logon tile uses server-pushed name (overrides `credential_provider_name` from `agent.yml`).
+
+### jump-host v3.6.0
+- SSH host keys persist across rebuilds: `hostKeyPath` moved to `/opt/theta-suite/.persist/jump-host/keys`.
+
 ## [3.29.0] - 2026-08-25
 
 The mesh has never worked on a laptop. Four independent defects, each fatal on
