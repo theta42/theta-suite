@@ -1,3 +1,20 @@
+## [3.33.0] - $(date +%Y-%m-%d)
+
+Implemented the fully abstract Resource Graph architecture. Virtual LDAP Groups synthesize OpenLDAP responses dynamically to eliminate database sprawl. Added the port-forward Service Subtype and adjusted networking routes. Replaced the Agent UI tab with a Status tab and added a View/Edit mode for resources that dynamically renders fields from the SubtypeTemplate schema. Write-through proxying is live for Spokes.
+
+### theta-directory v2.34.0
+- Implemented fully abstract Resource Graph architecture.
+- Added Virtual LDAP Groups interceptor to synthesize `_access` and `_admin` LDAP groups dynamically via `POST /api/v1/ldap/search`.
+- Added `port-forward` Service Subtype and schema.
+- Added `GET /api/discovery/port-forwards` route for firewall networking.
+- Added asynchronous state evaluation job via BullMQ (`EVAL_STATES`) that applies `status_rules` to evaluate resource telemetry into `metadata.status`.
+- UI: Added View vs Edit mode to resource modal.
+- UI: Replaced Agent tab with Status tab.
+- UI: Added dynamic form field rendering from `SubtypeTemplate.schema`.
+
+### theta-agent v2.19.0
+- Fixed a race condition where `theta-agent register` could silently drop the success payload because the CLI's one-shot websocket collided with the daemon's websocket. The CLI now pushes the payload through the daemon's stable websocket over the tray IPC socket.
+
 ## [3.32.0] - 2026-08-27
 
 Discovery resources are fixed end to end: Proxmox guest slugs are now hostname+MAC based
