@@ -1,3 +1,8 @@
+## [3.36.3] - 2026-08-29
+
+### theta-proxy v2.5.2
+- **Host auth router export:** Corrected `routes/host_auth.js` module export to directly export the Express router function for `app.use('/__proxy_auth', ...)`, resolving `TypeError: argument handler must be a function` startup crash.
+
 ## [3.36.2] - 2026-08-29
 
 ### theta-proxy v2.5.1
