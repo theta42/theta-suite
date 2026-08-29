@@ -1,3 +1,8 @@
+## [3.36.1] - 2026-08-29
+
+### Fixed
+- **Bootstrap execution compatibility:** Replaced unsupported `--env-file` argument in `docker compose exec` during bootstrap with standard environment variable inheritance (`-e VAULT_TOKEN`), resolving `unknown flag: --env-file` errors on setup.
+
 ## [3.36.0] - 2026-08-29
 
 Advance theta-agent to v2.21.1: the Windows agent builds again.
