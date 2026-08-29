@@ -2127,6 +2127,14 @@ if [[ "$CFG_THETA_AGENT_ENABLE" == "1" ]]; then
 						$SUDO sed -i "s|^location:.*|location: \"${CFG_SITE_NAME}\"|" /etc/theta42/agent.yml
 					fi
 				fi
+				# If the agent has not yet enrolled (auth_token is empty), update join_key
+				if [[ -n "$AGENT_JOIN_KEY" ]] && ! $SUDO grep -E -q '^auth_token: *"[^"]+"' /etc/theta42/agent.yml; then
+					if $SUDO grep -q '^join_key:' /etc/theta42/agent.yml; then
+						$SUDO sed -i "s|^join_key:.*|join_key: \"${AGENT_JOIN_KEY}\"|" /etc/theta42/agent.yml
+					else
+						echo "join_key: \"${AGENT_JOIN_KEY}\"" | $SUDO tee -a /etc/theta42/agent.yml >/dev/null
+					fi
+				fi
 			fi
 			# Stop a running agent before overwriting its binary (cp into a
 			# running executable fails with "Text file busy" on a re-install).

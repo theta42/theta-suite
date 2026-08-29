@@ -1,3 +1,8 @@
+## [3.36.5] - 2026-08-29
+
+### Fixed
+- **Agent self-enrollment on re-run:** Updated `setup.sh` to refresh the `join_key` in existing `/etc/theta42/agent.yml` configurations when `auth_token` is still empty/unenrolled, allowing host agent self-enrollment to succeed after previous bootstrap attempts without manual intervention.
+
 ## [3.36.4] - 2026-08-29
 
 ### theta-proxy v2.5.3
