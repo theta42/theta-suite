@@ -1,3 +1,12 @@
+## [3.36.0] - 2026-08-29
+
+Advance theta-agent to v2.21.1: the Windows agent builds again.
+
+### theta-agent v2.21.1
+- **The agent no longer compiled on Windows.** The v2.21.0 tray IPC peer-credential check called `syscall.Ucred` / `syscall.GetsockoptUcred` unconditionally — Linux-only symbols — so `go build` failed on Windows (and the Windows release job, which runs `go test` before compiling, could never publish artifacts). `peerEuid` now lives in a Linux file carrying the real `SO_PEERCRED` implementation and a portable fallback: on Windows, where AF_UNIX exposes no peer-credential interface, mutating tray commands are accepted exactly as before v2.21.0 (the gate there is the ACL on `%ProgramData%\Theta42`, where the socket lives); every other non-Linux platform takes the safe default and refuses.
+
+  Verified on Windows: `go build ./...`, `go vet ./...`, and `go test ./...` all pass, and the v2.21.1 release pipeline published every platform artifact — agent and tray binaries for linux/windows, the signed Windows installer, and SHA256SUMS.
+
 ## [3.35.0] - 2026-08-29
 
 Full suite security hardening, protocol contract implementations (G-1 through G-5), and automated Docker-backed test orchestration across all services.
