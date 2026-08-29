@@ -1,3 +1,10 @@
+## [3.36.6] - 2026-08-29
+
+### theta-directory v2.36.1
+- **Subtype Template Editor UI**: Added dedicated Subtype Templates management tab in Directory Management (`views/directory.ejs`) featuring catalog view, instant text search, target kind & category filters, visual JSON Schema property builder, raw JSON editor mode, status evaluation rules editor, and full template CRUD modal.
+- **Directory Resource Details Tab & Dynamic Schema**: Moved dynamic schema-driven subtype configuration fields from the General tab to the Details tab inside a structured card, rendering declared schema properties (ports, db names, cluster info, flags) cleanly per subtype.
+- **Unified Configuration Page Save & Reset**: Moved the Reset and Save buttons on the Settings/Configuration page (`views/conf.ejs`) to a dedicated card footer aligned right, and consolidated separate per-tab save handlers into a single unified action handler.
+
 ## [3.36.5] - 2026-08-29
 
 ### Fixed
