@@ -97,11 +97,18 @@ const REDIRECT_URI = `https://${PROXY_HOST}/api/auth/oidc/callback`;
 // A function, not a const: DOMAIN is declared further down this file, so
 // evaluating it here at module scope would hit the temporal dead zone.
 function proxyRedirectUris() {
-	if (!DOMAIN) return [REDIRECT_URI];
+	// Per-host SSO serves the proxy's public hosts, so the redirect wildcards
+	// must be built from the PUBLIC domain (stack.publicDomain) when it's set —
+	// that's the domain the gateway actually serves. Fall back to ldapDomain
+	// (DOMAIN) for stacks that don't distinguish the two. Deriving from
+	// ldapDomain alone registered a callback for a host the gateway never
+	// serves, breaking OIDC login on every site where the two diverge.
+	const publicDomain = (sso.stack && sso.stack.publicDomain) || DOMAIN;
+	if (!publicDomain) return [REDIRECT_URI];
 	return [
 		REDIRECT_URI,
-		`https://**.${DOMAIN}/__proxy_auth/callback`,
-		`https://${DOMAIN}/__proxy_auth/callback`,
+		`https://**.${publicDomain}/__proxy_auth/callback`,
+		`https://${publicDomain}/__proxy_auth/callback`,
 	];
 }
 const SSO_INTERNAL = 'http://localhost:3001';
@@ -185,7 +192,16 @@ function ldap(bin, args, ldif) {
 	}
 }
 
-const bindArgs = (extra) => ['-x', '-H', LDAP_URL, '-D', BIND_DN, '-w', ADMIN_PASS, ...(extra || [])];
+// Pass the bind password via a temp passfile (`-y`) instead of `-w` on argv,
+// where it is visible to `ps` / /proc/<pid>/environ for the lifetime of the
+// process. The passfile is created mode 0600 and unlinked as soon as the openldap
+// client has read it (best-effort cleanup via process exit + explicit rm).
+const PASSFILE = require('path').join(require('os').tmpdir(), `theta-bootstrap-pw-${process.pid}.pass`);
+require('fs').writeFileSync(PASSFILE, ADMIN_PASS, { mode: 0o600 });
+const bindArgs = (extra) => ['-x', '-H', LDAP_URL, '-D', BIND_DN, '-y', PASSFILE, ...(extra || [])];
+
+const _cleanupPassfile = () => { try { require('fs').unlinkSync(PASSFILE); } catch (_) {} };
+process.on('exit', _cleanupPassfile);
 
 function entryExists(dn) {
 	const r = ldap('ldapsearch', bindArgs(['-b', dn, '-s', 'base', '(objectClass=*)', 'dn']));
@@ -688,6 +704,42 @@ async function seedDirectory(token, clientId, jumpClientId) {
 		}, ['jump-host']);
 	}
 
+	// The reachable ENDPOINTS of the stack, as distinct from the components
+	// above.
+	//
+	// `jump-host-<site>` is the jump host as a component: its repo, its admin
+	// UI on 3002, the thing you restart. None of that is the port a person
+	// actually types, and the three published hostnames the whole stack is
+	// reached through had no directory entry at all -- OpenResty terminates
+	// them, but "OpenResty Edge" is one resource for a wildcard, not an entry
+	// per name. So a directory whose job is answering "how do I reach this"
+	// could not answer it for the SSO, the proxy, or the jump host.
+	//
+	// Kept as separate `http`/`ssh` service resources rather than more metadata
+	// on the component: they are what gets granted, monitored and offered as a
+	// jump target, and each has its own port and address.
+	const JUMP_SSH_PORT = Number(process.env.JUMP_SSH_PORT || 2222);
+	const endpoints = [
+		['SSH (jump host)', `ssh-jump-${SITE_SLUG}`, 'ssh', JUMP_SSH_PORT,
+			JUMP_HOST ? `ssh://${JUMP_HOST}:${JUMP_SSH_PORT}` : '',
+			'fa-solid fa-terminal', 'SSH entry point to every managed host.'],
+		['SSO (HTTP)', `http-sso-${SITE_SLUG}`, 'http', 443, `https://${SSO_HOST}`,
+			'fa-solid fa-globe', 'The directory and identity provider over HTTPS.'],
+		['Proxy (HTTP)', `http-proxy-${SITE_SLUG}`, 'http', 443, `https://${PROXY_HOST}`,
+			'fa-solid fa-globe', 'The proxy management UI over HTTPS.'],
+		['Jump (HTTP)', `http-jump-${SITE_SLUG}`, 'http', 443, JUMP_HOST ? `https://${JUMP_HOST}` : '',
+			'fa-solid fa-globe', 'The jump host web UI over HTTPS.'],
+	];
+	for (const [label, slug, subType, port, address, icon, tagline] of endpoints) {
+		// A hostname that was never configured (no public domain, so no
+		// JUMP_HOST) would seed an endpoint pointing nowhere.
+		if (!address) continue;
+		await ensure('service',
+			SITE_NAME && SITE_NAME !== 'local' ? `${label} (${SITE_NAME})` : label,
+			slug, host.id,
+			{ address, port, subType, icon, tagline, requestable: false });
+	}
+
 	// Correct installs seeded between 2026-08-05 and this release, where Proxy's
 	// and jump-host's services were parented to now-removed synthetic
 	// `host_theta-proxy` / `host_theta-jump` resources instead of the stack
@@ -927,7 +979,7 @@ async function ensureProxyApiToken(token) {
 	}
 }
 
-// Mint (or reuse) a theta-agent join key and hand it to setup.sh.
+// Mint a theta-agent join key and hand it to setup.sh.
 //
 // A join key is the single credential an operator needs to add a host: the
 // agent presents it, the SSO enrolls the host and issues it its own per-agent
@@ -936,20 +988,45 @@ async function ensureProxyApiToken(token) {
 // values onto the machine by hand -- and setup.sh's own agent install had no
 // way to produce a token the server would accept at all.
 //
-// Idempotent: reuses the existing `setup` key rather than piling up new ones.
-// A key can only be shown once, so if the stored one is not recoverable we mint
-// a replacement and label it for the run that created it.
+// NOT idempotent in key count: every run mints a fresh, scoped key and revokes
+// the previous run's `setup` label key(s). A join key is a long-lived enrollment
+// credential, so each one is minted with an expiry + use cap (see
+// AgentJoinKey.issue) rather than piling up unlimited, non-expiring keys.
 async function ensureAgentJoinKey(token) {
+	const label = SITE_NAME && SITE_NAME !== 'local' ? `setup (${SITE_NAME})` : 'setup';
+	try {
+		// Revoke any previous run's `setup` label key(s) before minting a fresh
+		// one — otherwise every setup.sh run piles up another unlimited,
+		// non-expiring enrollment key. Keys are shown once, so a revoked key can't
+		// be reused even if it was captured.
+		const listRes = await fetch(`${SSO_INTERNAL}/api/agent/join-keys`, {
+			headers: { 'auth-token': token }
+		});
+		if (listRes.ok) {
+			const listData = await listRes.json();
+			for (const k of (listData.joinKeys || [])) {
+				if (k.label === label && !k.revoked) {
+					await fetch(`${SSO_INTERNAL}/api/agent/join-keys/${k.id}/revoke`, {
+						method: 'POST',
+						headers: { 'auth-token': token }
+					});
+					log(`  Revoked previous join key ${k.keyPrefix} (${k.label})`);
+				}
+			}
+		}
+	} catch (error) {
+		log(`  WARNING: could not revoke previous join keys: ${error.message}`);
+	}
 	try {
 		const res = await fetch(`${SSO_INTERNAL}/api/agent/join-keys`, {
 			method: 'POST',
 			headers: { 'auth-token': token, 'Content-Type': 'application/json' },
-			body: JSON.stringify({ label: SITE_NAME && SITE_NAME !== 'local' ? `setup (${SITE_NAME})` : 'setup' }),
+			body: JSON.stringify({ label, expiresInDays: 30, maxUses: 10 }),
 		});
 		if (!res.ok) throw new Error(`${res.status} ${await res.text().catch(() => '')}`);
 		const data = await res.json();
 		if (!data.key) throw new Error('join-key response had no key');
-		log('  Minted a theta-agent join key');
+		log('  Minted a theta-agent join key (expires in 30d or 10 uses)');
 		return data.key;
 	} catch (error) {
 		log(`  WARNING: could not mint a theta-agent join key: ${error.message}`);
@@ -976,7 +1053,8 @@ async function ensureAgentJoinKey(token) {
 // callback failed on every site where the two differ. Strip the leading label
 // off ssoHost instead: that reproduces setup.sh's rule in both branches.
 const PUBLIC_DOMAIN = SSO_HOST.includes('.') ? SSO_HOST.slice(SSO_HOST.indexOf('.') + 1) : '';
-const JUMP_HOST = process.env.CFG_JUMP_HOST || (PUBLIC_DOMAIN ? `jump.${PUBLIC_DOMAIN}` : '');
+const JUMP_SSH_PORT = Number(process.env.JUMP_SSH_PORT || 2222);
+ const JUMP_HOST = process.env.CFG_JUMP_HOST || (PUBLIC_DOMAIN ? `jump.${PUBLIC_DOMAIN}` : '');
 const JUMP_SECRETS = '/config/jump-secrets.js';
 const JUMP_TOKEN_NAME = SITE_NAME && SITE_NAME !== 'local' ? `theta-jump (${SITE_NAME})` : 'theta-jump-host';
 const JUMP_CLIENT_NAME = SITE_NAME && SITE_NAME !== 'local' ? `theta-jump (${SITE_NAME})` : 'theta-jump';
@@ -1042,13 +1120,13 @@ module.exports = {
 \tsso: {
 \t\turl: 'http://127.0.0.1:3001',
 \t\tapiToken: ${JSON.stringify(apiToken)},
-\t},
-\tssh: {
-\t\tlistenPort: 2222,
-\t\t		hostKeyPath: '/opt/theta-suite/.persist/jump-host/keys',
-\t\tpasswordAuth: 'off',
-\t\tkeyComment: ${JSON.stringify(`jump-host@${siteName}`)},
-\t},
+	},
+	ssh: {
+		listenPort: JUMP_SSH_PORT,
+		hostKeyPath: '/opt/theta-suite/.persist/jump-host/keys',
+		passwordAuth: 'off',
+		keyComment: ${JSON.stringify(`jump-host@${siteName}`)},
+ 	},
 \tweb: { port: 3002 },
 \t// Web UI SSO login — the jump host's own OAuth client. tokenEndpoint /
 \t// userinfoEndpoint use loopback (server-to-server, the gateway runs on the
@@ -1068,7 +1146,7 @@ module.exports = {
 \t\tusernameClaim: 'preferred_username',
 \t},
 \tauth: {
-\t\tadminGroups: ['app_sso_admin'],
+\t\tadminGroups: ['app_sso_admin', 'app_super_admin'],
 \t\tadminUsers: ['jumpadmin'],
 \t\tlocalAdminPass: ${JSON.stringify(localAdminPass)},
 \t},

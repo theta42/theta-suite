@@ -39,3 +39,4 @@ docs/_site
 # Persisted artifacts that survive container rebuilds / host reinstalls
 # (SSH host keys, etc). Never commit — contains secret key material.
 .persist/
+.omp/
