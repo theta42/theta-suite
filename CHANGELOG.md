@@ -1,4 +1,41 @@
-## [3.33.0] - $(date +%Y-%m-%d)
+## [3.34.0] - 2026-08-28
+
+The resource directory redesign is finished, and for the first time it was opened in a
+browser. v3.33.0 shipped a directory page that did not execute at all: a `<script>` tag
+nested inside a JavaScript template literal made the whole page script a syntax error,
+so every function on it was undefined and the tree rendered zero rows. Nothing caught
+it — the templates compiled, every route returned 200, and the whole suite passed.
+Server-side tests do not cover a server-rendered page, and there is now a test that does.
+
+Fixing it exposed two defects only a running page could show, and the pass that followed
+turned up several more that had shipped inert: edge reparenting that never persisted,
+a spoke export that handed sites each other's data, and garbage collection that marked
+the same rows every time it ran.
+
+### theta-directory v2.35.0
+- **The directory page did not run at all.** `views/directory.ejs` nested a `<script>` element inside a JS template literal; an HTML parser ends a script element at the first closing script tag in the source whatever JS context it appears in. `renderTable`, `loadResources` and `openEditModal` were all undefined. Everything three releases of resource-directory work had put in that view had never once rendered.
+- **`tests/view_integrity.test.js`** now checks every view compiles, no script element is closed from inside a string, every inline script parses, and every function an inline handler names exists. Fails against v2.34.0.
+- **Bubbled environment never reached the tree** — the route read `Resource.list()`, not `getGraph()`, so the redesign's headline feature was computed on every request and discarded.
+- **`ResourceEdge.source` was never persisted** (undeclared field; the ORM's `preSave` iterates declared fields only), so the edge reparent/prune logic shipped in v2.33.0 was inert from day one.
+- **`POST /api/site/export` handed spokes each other's data** — a promise added mid-array in a positional destructure shifted every later binding, so `baoSecrets` received the agent fleet including token hashes.
+- **Join-key enrolment required a `?site=` no shipped agent sent.**
+- **Discovery garbage collection never persisted** — updating metadata with the same object reference is not a change.
+- **Promoting a discovered resource created groups at an access level the model does not rank**, so the group granted nothing and site admins could not reach the host.
+- **The `archived` flag was written and never read** — a machine gone a month was still offered as a jump target.
+- **One hung discovery plugin froze every status dot in the directory**; discovery and maintenance now have separate queues, and plugin runs have per-instance timeouts.
+- Status rolls up the graph (worst-wins, `unknown` outranking `ok`), shown as a hollow dot so a summary never reads as a measurement.
+- 119 seeded subtype templates; ownership propagates down the graph; a safe expression evaluator for operator-written status rules; read-only View mode; subtype templates replicate to spokes; agents enrol against a site and bind to a service, not a host.
+- `metadata.environment` (`prod`/`testing`/`dev`) replaces the boolean `isProduction` and is operator-owned — discovery never writes it. It bubbles **up**: a resource is as critical as the most critical thing under it.
+- New docs: `subtype-templates.md`, `status-rules.md`, `access-inheritance.md`, `discovery-plugins.md`.
+- 952 tests passing against live LDAP, 0 failing; 13 new test files.
+
+### theta-agent v2.20.0
+- **The agent tells the directory which site it is at when it self-enrols.** A join-key connection carries `?site=<slug>`, resolved from `location` in `agent.yml`, else the `site` TXT field of a local `_theta-suite._tcp` announcement that fronts the very host the agent is already configured to talk to, else empty (the directory falls back to its own site). The hint is a label, not a credential — the join key and TLS decide admission — and it is sent only before enrolment, so it can never act as a roaming signal for an established agent.
+
+### theta-suite
+- Changelog dates for v3.33.0 and theta-directory v2.34.0 were committed as a literal `$(date +%Y-%m-%d)`; corrected to 2026-08-28.
+
+## [3.33.0] - 2026-08-28
 
 Implemented the fully abstract Resource Graph architecture. Virtual LDAP Groups synthesize OpenLDAP responses dynamically to eliminate database sprawl. Added the port-forward Service Subtype and adjusted networking routes. Replaced the Agent UI tab with a Status tab and added a View/Edit mode for resources that dynamically renders fields from the SubtypeTemplate schema. Write-through proxying is live for Spokes.
 
