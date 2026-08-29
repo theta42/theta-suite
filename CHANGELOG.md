@@ -1,3 +1,8 @@
+## [3.36.2] - 2026-08-29
+
+### theta-proxy v2.5.1
+- **Nginx configuration comment syntax:** Corrected comment prefixes in `ops/nginx_conf/proxy.conf` from Lua `--` to Nginx `#`, resolving `unknown directive "--"` startup failures in OpenResty.
+
 ## [3.36.1] - 2026-08-29
 
 ### Fixed
