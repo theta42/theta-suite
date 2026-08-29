@@ -1640,16 +1640,10 @@ STACK_HOST_KERNEL="$(uname -r 2>/dev/null || true)"
 # own containers are recognised as ours rather than discovered as strangers.
 STACK_COMPOSE_PROJECT="${COMPOSE_PROJECT_NAME:-$(basename "$(pwd)" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9_-' '-' | sed 's/-*$//')}"
 
-# Crown-jewel handling: pass the root VAULT_TOKEN to the bootstrap exec via a
-# temp env file (mode 0600) instead of `-e VAULT_TOKEN=...`, which would expose
-# it in the process argv visible to `ps` / /proc/<pid>/environ on the host.
-VAULT_ENV_TMP="$(mktemp)"
-printf 'VAULT_TOKEN=%s\n' "$VAULT_TOKEN" > "$VAULT_ENV_TMP"
-chmod 600 "$VAULT_ENV_TMP"
-
-
-
-BOOTSTRAP_OUT=$("${COMPOSE[@]}" exec -T \
+# Crown-jewel handling: pass the root VAULT_TOKEN to the bootstrap exec via
+# environment variable inheritance (-e VAULT_TOKEN) instead of `-e VAULT_TOKEN=...`,
+# which avoids putting the token value in command-line arguments visible to `ps`.
+BOOTSTRAP_OUT=$(VAULT_TOKEN="$VAULT_TOKEN" "${COMPOSE[@]}" exec -T \
 	-e COMPOSE_PROJECT_NAME="$STACK_COMPOSE_PROJECT" \
 	-e STACK_HOST_NAME="$STACK_HOST_NAME" \
 	-e STACK_HOST_IP="$STACK_HOST_IP" \
@@ -1658,11 +1652,10 @@ BOOTSTRAP_OUT=$("${COMPOSE[@]}" exec -T \
 	-e STACK_HOST_KERNEL="$STACK_HOST_KERNEL" \
 	-e CFG_JUMP_HOST="${CFG_JUMP_HOST:-}" \
 	-e VAULT_ADDR=http://openbao:8200 \
-	--env-file "$VAULT_ENV_TMP" \
+	-e VAULT_TOKEN \
 	sso-manager node /bootstrap/bootstrap.js 2>&1) \
 	|| { _bootstrap_failed=1; }
 
-rm -f "$VAULT_ENV_TMP"
 if [[ "${_bootstrap_failed:-0}" == "1" ]]; then
 	# Never dump the bootstrap output (which includes CLIENT_SECRET) unless the
 	# operator opts in — secrets in the log/terminal are the failure mode.
