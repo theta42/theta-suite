@@ -115,7 +115,7 @@ BACKUP_KEEP="${BACKUP_KEEP:-5}"
 info()  { printf '\033[1;34m[setup]\033[0m %s\n' "$*"; }
 warn()  { printf '\033[1;33m[setup]\033[0m %s\n' "$*" >&2; }
 error() { printf '\033[1;31m[setup]\033[0m %s\n' "$*" >&2; }
-die()   { error "$*"; exit 1; }
+die()   { msg="$*"; printf '\033[1;31m[setup]\033[0m %b\n' "$msg" >&2; exit 1; }
 
 # The gateway installs on the host (systemd, /opt, host networking), so parts of
 # this script need root even though the rest only needs docker. Empty when
@@ -130,10 +130,12 @@ if [[ $EUID -eq 0 ]]; then SUDO=""; else SUDO="sudo"; fi
 RESET_OPENBAO=0
 SEED_NODE_SECRET=0
 SEED_NODE_ARGS=()
+ALLOW_DIVERGENT_LDAP_ROOT=0
 for arg in "$@"; do
 	case "$arg" in
 		--reset-openbao) RESET_OPENBAO=1 ;;
 		--seed-node-secret) SEED_NODE_SECRET=1 ;;
+		--allow-divergent-ldap-root) ALLOW_DIVERGENT_LDAP_ROOT=1 ;;
 		*) if [[ "$SEED_NODE_SECRET" == 1 ]]; then SEED_NODE_ARGS+=("$arg"); else warn "unknown argument: $arg (ignored)"; fi ;;
 	esac
 done
@@ -165,6 +167,7 @@ rand_hex() {
 env_upsert() {
 	local key="$1" val="$2" file=./.env
 	touch "$file"
+	chmod 600 "$file"
 	if grep -q "^${key}=" "$file" 2>/dev/null; then
 		sed -i "s|^${key}=.*|${key}=${val}|" "$file"
 	else
@@ -299,6 +302,15 @@ IS_SPOKE=$HAVE_SPOKE_ENV
 export CFG_JUMP_HOST
 CFG_CREATE_ALL_HTTP="${CFG_CREATE_ALL_HTTP:-0}"
 export CFG_CREATE_ALL_HTTP
+# Persist bind-address overrides into .env so a plain `docker compose up` later
+# (without master.env/spoke.env) keeps the operator's lock-to-host choice instead
+# of silently re-exposing 0.0.0.0. docker compose reads these directly from .env.
+for _bind_key in SSO_BIND MGMT_BIND LDAP_BIND LDAPS_BIND; do
+	_bind_val="${!_bind_key:-}"
+	[[ -n "$_bind_val" ]] && env_upsert "$_bind_key" "$_bind_val"
+done
+unset _bind_key _bind_val
+
 
 # ── Optional outbound HTTP(S) proxy for docker build + the running containers ─
 # CFG_HTTP_PROXY / CFG_HTTPS_PROXY / CFG_NO_PROXY (from master.env/spoke.env
@@ -478,15 +490,38 @@ if [[ "${SKIP_SUBMODULE_UPDATE:-0}" != "1" ]]; then
 	if (( IS_SPOKE )) && [[ "${SKIP_VERSION_CHECK:-0}" != "1" ]]; then
 		info "Keeping submodules at their pinned commits (spoke matched to master ${TARGET_VER:-})."
 	else
-		SM_TMPDIR="$(mktemp -d)"
-		for sm in "${SUBMODULES[@]}"; do
-			( sm_update_one "$sm" ) > "$SM_TMPDIR/$sm.log" 2>&1 &
-		done
-		wait
-		for sm in "${SUBMODULES[@]}"; do
-			[[ -f "$SM_TMPDIR/$sm.log" ]] && cat "$SM_TMPDIR/$sm.log"
-		done
-		rm -rf "$SM_TMPDIR"
+		# Master honors a deployment pin: if THETA_SUITE_VERSION is set in .env
+		# (a prior run pinned this deployment to a specific suite version), advance
+		# each submodule to THAT tag's pinned gitlinks instead of the newest
+		# release tag. Newest-tag behavior only when the pin is absent. This stops
+		# a plain `./setup.sh` on a pinned master from silently drifting every
+		# component past the version the operator locked the deployment to.
+		MASTER_PIN_VER="$(env_get THETA_SUITE_VERSION)"
+		if [[ -n "$MASTER_PIN_VER" && "$MASTER_PIN_VER" != "unknown" ]] && git rev-parse --verify -q "refs/tags/${MASTER_PIN_VER}" >/dev/null 2>&1; then
+			info "Master pinned to ${MASTER_PIN_VER} — advancing submodules to that tag's gitlinks."
+			for sm in "${SUBMODULES[@]}"; do
+				[[ -d "$sm" ]] || continue
+				before_rev="$(git -C "$sm" rev-parse HEAD 2>/dev/null || true)"
+				pinned="$(git ls-tree "${MASTER_PIN_VER}" "$sm" 2>/dev/null | awk '{print $3}')"
+				if [[ -n "$pinned" ]] && [[ "$before_rev" != "$pinned" ]]; then
+					if git -C "$sm" checkout -q "$pinned" 2>/dev/null; then
+						info "  ${sm}: pinned ${before_rev:0:12} -> ${MASTER_PIN_VER} ($(git -C "$sm" rev-parse --short HEAD))"
+					else
+						warn "  ${sm}: could not check out pinned commit for ${MASTER_PIN_VER} — staying on ${before_rev:0:12}"
+					fi
+				fi
+			done
+		else
+			SM_TMPDIR="$(mktemp -d)"
+			for sm in "${SUBMODULES[@]}"; do
+				( sm_update_one "$sm" ) > "$SM_TMPDIR/$sm.log" 2>&1 &
+			done
+			wait
+			for sm in "${SUBMODULES[@]}"; do
+				[[ -f "$SM_TMPDIR/$sm.log" ]] && cat "$SM_TMPDIR/$sm.log"
+			done
+			rm -rf "$SM_TMPDIR"
+		fi
 	fi
 else
 	info "Skipping submodule update (SKIP_SUBMODULE_UPDATE=1)."
@@ -589,6 +624,11 @@ module.exports = {
 	stack: {
 		ldapBaseDn: $(js_str "$dn"),
 		ldapDomain: $(js_str "$domain"),
+		// The site's public web domain — where the gateway actually serves hosts.
+		// Independent of ldapDomain (the LDAP identity namespace): spokes can
+		// diverge here (MULTI_SITE_SPEC.md §4). When unset, falls back to
+		// ldapDomain, so a standalone install behaves exactly as before.
+		publicDomain: $(js_str "${CFG_PUBLIC_DOMAIN:-$domain}"),
 		siteName: $(js_str "${CFG_SITE_NAME:-local}"),
 		ldapCertCn: $(js_str "${CFG_LDAP_CERT_CN:-}"),
 		ssoHost: $(js_str "$CFG_SSO_HOST"),
@@ -746,6 +786,15 @@ BAOEOF
 		CFG_JWT_SECRET="${JWT_SECRET:-$CFG_JWT_SECRET}"
 		CFG_ADMIN_PASS="${BOOTSTRAP_ADMIN_PASS:-$CFG_ADMIN_PASS}"
 		CFG_SVC_PASS="${LDAP_SERVICE_PASS:-$CFG_SVC_PASS}"
+		# Refuse literal CHANGE-ME placeholders: they are not real secrets, and
+		# migrating one would lock the deployment to a known password. Fall back to
+		# the derived/random value (empty here -> regenerated further down).
+		_reject_change_me() { [[ "$1" == "CHANGE-ME" ]] && return 1 || return 0; }
+		_reject_change_me "$CFG_LDAP_ADMIN_PASS" || { warn "  .env has LDAP_ADMIN_PASS=CHANGE-ME — ignoring (will regenerate)."; CFG_LDAP_ADMIN_PASS=""; }
+		_reject_change_me "$CFG_ADMIN_PASS" || { warn "  .env has BOOTSTRAP_ADMIN_PASS=CHANGE-ME — ignoring (will regenerate)."; CFG_ADMIN_PASS=""; }
+		_reject_change_me "$CFG_SVC_PASS" || { warn "  .env has LDAP_SERVICE_PASS=CHANGE-ME — ignoring (will regenerate)."; CFG_SVC_PASS=""; }
+		_reject_change_me "$CFG_JWT_SECRET" || { warn "  .env has JWT_SECRET=CHANGE-ME — ignoring (will regenerate)."; CFG_JWT_SECRET=""; }
+		unset -f _reject_change_me
 		CFG_LDAP_CERT_CN="${LDAP_CERT_CN:-$CFG_LDAP_CERT_CN}"
 		# .env has no legacy LDAPS_HOST key; this stays as set in master.env/env.
 		CFG_LDAPS_HOST="${CFG_LDAPS_HOST:-}"
@@ -796,13 +845,47 @@ BAOEOF
 			if [[ -n "$MASTER_LDAP_PASS" ]]; then
 				CFG_LDAP_ADMIN_PASS="$MASTER_LDAP_PASS"
 				info "Adopted cluster LDAP admin credential for OpenLDAP multi-master replication"
+			else
+				# The master did not report ldapAdminPass (older master, or the
+				# field was removed). Without it, this spoke would generate a
+				# RANDOM LDAP root password — divergent from the master's, so the
+				# two directories can never multi-master-replicate (different
+				# roots = different data). Refuse to silently diverge: require the
+				# operator to explicitly opt in (--allow-divergent-ldap-root) or
+				# confirm interactively.
+				warn "════════════════════════════════════════════════════════════════"
+				warn "DIVERGENT LDAP ROOT PASSWORD RISK"
+				warn "The master (${CFG_MASTER_DIRECTORY_URL}) did not report its LDAP"
+				warn "admin password (master older than the release that adds it to"
+				warn "POST /api/site/ping, or the field was removed)."
+				warn ""
+				warn "Without it, this spoke will generate a RANDOM LDAP root password"
+				warn "that DIFFERS from the master's — the two directories can never"
+				warn "multi-master-replicate (different roots = permanently split)."
+				warn ""
+				warn "  - To accept a divergent standalone root on this spoke,"
+				warn "    re-run with: --allow-divergent-ldap-root"
+				warn "  - Or update the master to a theta-suite that reports it."
+				warn "════════════════════════════════════════════════════════════════"
+				if [[ "$ALLOW_DIVERGENT_LDAP_ROOT" == "1" ]]; then
+					warn "Proceeding with divergent LDAP root (--allow-divergent-ldap-root set)."
+				elif [[ -t 0 ]]; then
+					REPLY=""
+					read -p "Proceed with a DIVERGENT LDAP root password? [y/N] " -n 1 -r || true
+					echo
+					if [[ ! "$REPLY" =~ ^[Yy]$ ]]; then
+						die "Aborted. Re-run with --allow-divergent-ldap-root to accept a divergent root, or update the master."
+					fi
+				else
+					die "Non-interactive run with divergent LDAP root. Re-run with --allow-divergent-ldap-root to proceed."
+				fi
 			fi
 		fi
 	fi
 
 	# Derive everything from the domain — the one value operators enter (or, for
 	# a spoke, the value just fetched above). No example.com defaults: a blank
-	# domain means first-run setup hasn't been done yet. CFG_BASE_DN can still
+ 	# domain means first-run setup hasn't been done yet. CFG_BASE_DN can still
 	# be set directly (master.env or a migrated .env) to override the derived
 	# DN or to read the domain back out of an old-style DN-first setup.env; if
 	# not, it's built from CFG_DOMAIN.
@@ -993,6 +1076,9 @@ backup_before_rebuild() {
 	done < <(ls -1 "$BACKUP_DIR" 2>/dev/null | sort -r | tail -n +$((keep + 1)))
 	[[ "$removed" -gt 0 ]] && info "  pruned $removed old backup(s) (keeping $keep)."
 	info "  snapshot complete."
+	# Clear the ERR trap set at the top of this function so it does not leak
+	# and fire for unrelated commands after this function returns.
+	trap - ERR
 }
 backup_before_rebuild
 
@@ -1436,7 +1522,7 @@ for i in $(seq 1 120); do
 	if docker exec sso-manager wget -q -O- http://localhost:3001/health >/dev/null 2>&1; then
 		info "sso-manager is healthy (probed /health)."; break
 	fi
-	if (( i == 60 )); then die "sso-manager did not become healthy in 60s. Check: ${COMPOSE[*]} logs sso-manager"; fi
+	if (( i == 60 )); then die "sso-manager did not become healthy in 120s. Check: ${COMPOSE[*]} logs sso-manager"; fi
 	sleep 2
 done
 
@@ -1454,8 +1540,7 @@ fi
 
 info "Seeding app configs into OpenBao (idempotent)..."
 # sso-manager/conf holds the operator-set LDAP/SMTP/jwtSecret values — sso has
-# no bootstrap-generated creds, so the file is the complete source of truth.
-seed_app_conf sso-manager/conf /config/sso-secrets.js
+seed_app_conf sso-manager/conf /config/sso-secrets.js 1
 # proxy/conf is seeded from the operator file (placeholder OAuth creds); the
 # bootstrap (step 5) then writes the real generated OAuth client creds into
 # OpenBao over this. proxy boots at step 6, after bootstrap, so it sees the
@@ -1555,6 +1640,15 @@ STACK_HOST_KERNEL="$(uname -r 2>/dev/null || true)"
 # own containers are recognised as ours rather than discovered as strangers.
 STACK_COMPOSE_PROJECT="${COMPOSE_PROJECT_NAME:-$(basename "$(pwd)" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9_-' '-' | sed 's/-*$//')}"
 
+# Crown-jewel handling: pass the root VAULT_TOKEN to the bootstrap exec via a
+# temp env file (mode 0600) instead of `-e VAULT_TOKEN=...`, which would expose
+# it in the process argv visible to `ps` / /proc/<pid>/environ on the host.
+VAULT_ENV_TMP="$(mktemp)"
+printf 'VAULT_TOKEN=%s\n' "$VAULT_TOKEN" > "$VAULT_ENV_TMP"
+chmod 600 "$VAULT_ENV_TMP"
+
+
+
 BOOTSTRAP_OUT=$("${COMPOSE[@]}" exec -T \
 	-e COMPOSE_PROJECT_NAME="$STACK_COMPOSE_PROJECT" \
 	-e STACK_HOST_NAME="$STACK_HOST_NAME" \
@@ -1564,9 +1658,21 @@ BOOTSTRAP_OUT=$("${COMPOSE[@]}" exec -T \
 	-e STACK_HOST_KERNEL="$STACK_HOST_KERNEL" \
 	-e CFG_JUMP_HOST="${CFG_JUMP_HOST:-}" \
 	-e VAULT_ADDR=http://openbao:8200 \
-	-e VAULT_TOKEN="$VAULT_TOKEN" \
-	sso-manager node /bootstrap/bootstrap.js) \
-	|| die "bootstrap failed:\n${BOOTSTRAP_OUT}"
+	--env-file "$VAULT_ENV_TMP" \
+	sso-manager node /bootstrap/bootstrap.js 2>&1) \
+	|| { _bootstrap_failed=1; }
+
+rm -f "$VAULT_ENV_TMP"
+if [[ "${_bootstrap_failed:-0}" == "1" ]]; then
+	# Never dump the bootstrap output (which includes CLIENT_SECRET) unless the
+	# operator opts in — secrets in the log/terminal are the failure mode.
+	if [[ "${SETUP_DEBUG:-0}" == "1" ]]; then
+		die "bootstrap failed:\n${BOOTSTRAP_OUT}"
+	else
+		error "bootstrap failed (set SETUP_DEBUG=1 for output)"
+		exit 1
+	fi
+fi
 
 getval() { echo "$BOOTSTRAP_OUT" | grep -m1 "^$1=" | cut -d= -f2-; }
 CLIENT_ID=$(getval CLIENT_ID)
@@ -1690,7 +1796,7 @@ for i in $(seq 1 120); do
 	if docker exec proxy curl -fsS http://localhost:3000/health >/dev/null 2>&1; then
 		info "proxy is healthy."; break
 	fi
-	if (( i == 60 )); then die "proxy did not become healthy in 60s. Check: ${COMPOSE[*]} logs proxy"; fi
+	if (( i == 60 )); then die "proxy did not become healthy in 120s. Check: ${COMPOSE[*]} logs proxy"; fi
 	sleep 2
 done
 
@@ -2113,9 +2219,10 @@ if [[ "$CFG_THETA_AGENT_ENABLE" == "1" ]] && [[ -x /usr/local/bin/theta-agent ]]
 			# The LDAP server is co-located with the stack on THIS host, so the
 			# host must reach it over the loopback / a local address -- NEVER the
 			# public domain (sso.<domain>), which cannot route back to the 389/636
-			# ports through NAT. localhost is fine because the generated sssd.conf
-			# sets ldap_tls_reqcert=never (hostname verification is off). An
-			# operator may override with CFG_LDAPS_HOST (an internal hostname/IP).
+			# ports through NAT. localhost uses a self-signed cert, so the generated
+			# sssd.conf sets ldap_tls_reqcert=never (hostname verification off) --
+			# an operator with a CA-signed cert reachable by hostname may override
+			# with CFG_LDAPS_HOST (internal hostname/IP) and demand verification.
 			ldaps_host="${CFG_LDAPS_HOST:-localhost}"
 			cat > ldap-client/ldap.vars <<LDAPVARS
 export ldap_host="${ldaps_host}"
@@ -2125,6 +2232,9 @@ export ldap_bind_password="${ldap_bind_pass}"
 export sso_url="https://${sso_host}"
 export sso_token=""
 export ldap_location="${ldap_site:-local}"
+# TLS cert verification for LDAPS: "never" (loopback/self-signed, the stack
+# default above) or "demand" (CA-signed cert, real deployments). See C4/H12.
+export ldap_tls_reqcert="never"
 # Groups that grant SSH/access on this host (docs/GROUPS.md §8): the site's
 # all-hosts aggregate, this host's own access group, and god_admin.
 ldap_access_groups=( "site_\${ldap_location}_hosts_access" "site_\${ldap_location}_host_\$(hostname)_access" "god_admin" )
@@ -2136,7 +2246,7 @@ LDAPVARS
 		(
 			cd ldap-client || exit 0
 			if [[ -x "index.sh" ]]; then
-				bash index.sh --non-interactive 2>/dev/null || warn "  ldap-client enrollment failed (continuing)..."
+				bash index.sh > /tmp/theta-ldap-enroll.log 2>&1 || warn "  ldap-client enrollment failed (continuing):\n$(sed 's/^/    /' /tmp/theta-ldap-enroll.log)"
 			fi
 		)
 	else

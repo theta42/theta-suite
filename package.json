@@ -1,0 +1,18 @@
+{
+  "name": "theta-suite",
+  "version": "3.35.0",
+  "description": "Theta Suite — Unified Identity, Reverse Proxy, Jump Host, and Agent Ecosystem",
+  "private": true,
+  "scripts": {
+    "test": "./test-integration.sh",
+    "test:all": "./test-integration.sh --all",
+    "test:sso": "npm --prefix sso-manager-node/nodejs run test:docker",
+    "test:e2e": "npm --prefix sso-manager-node/nodejs run test:e2e",
+    "test:multisite": "npm --prefix sso-manager-node/nodejs run test:multisite",
+    "test:mesh": "cd jump-host && E2E_PASS=testpass E2E_JWT=testjwt E2E_TOKEN=testtoken docker compose -f docker-compose.mesh-e2e.yml down -v && E2E_PASS=testpass E2E_JWT=testjwt E2E_TOKEN=testtoken docker compose -f docker-compose.mesh-e2e.yml up --build --abort-on-container-exit --exit-code-from checker && E2E_PASS=testpass E2E_JWT=testjwt E2E_TOKEN=testtoken docker compose -f docker-compose.mesh-e2e.yml down -v",
+    "test:proxy": "npm --prefix proxy/nodejs test",
+    "test:jump-host": "npm --prefix jump-host/nodejs test",
+    "test:agent": "cd theta-agent && go test -count=1 ./...",
+    "test:ldap-client": "cd ldap-client && bash test_slug.sh"
+  }
+}

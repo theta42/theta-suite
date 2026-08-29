@@ -296,7 +296,7 @@ services:
     environment:
       - BAO_ADDR=http://127.0.0.1:8200
     ports:
-      - "8080:8200"
+      - "127.0.0.1:8080:8200"
     volumes:
       - ./config/openbao.hcl:/vault/config/openbao.hcl:ro
       - openbao-data:/vault/data
@@ -313,6 +313,5 @@ volumes:
   proxy-data:
   proxy-cache:
   proxy-logs:
-  jump-data:
-  jump-redis-data:
+
   openbao-data:

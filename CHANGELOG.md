@@ -1,3 +1,83 @@
+## [3.35.0] - 2026-08-29
+
+Full suite security hardening, protocol contract implementations (G-1 through G-5), and automated Docker-backed test orchestration across all services.
+
+### theta-suite
+- **File permissions hardening (C1):** Normalized `.env` and configuration file permissions to mode `0600` in `setup.sh`.
+- **Configurable Jump Host SSH Port (H10 / Contract G-3):** Propagated `JUMP_SSH_PORT` through `setup.sh`, `bootstrap.js`, `master.env.example`, and `.env.example`, supporting custom SSH ports for jump hosts.
+- **OpenBao local binding and secret synchronization (M1, M2):** Bound OpenBao port strictly to `127.0.0.1:8080` in `docker-compose.yml` and enforced automatic synchronization of `./config/sso-secrets.js` into `secret/sso-manager/conf`.
+- **Ephemeral and expiring agent join keys (M4):** Enforced expiration and usage limits on bootstrap join keys, revoking setup keys on completion.
+- **Persistent bind configuration (M3):** Persisted LDAP and Redis bind overrides into `.env` to prevent configuration drift across restarts.
+- **Docker-backed test orchestration (M40):** Integrated Docker-based OpenLDAP and Redis test runners (`test-integration.sh` and root `package.json`), enabling reproducible end-to-end integration testing.
+
+### theta-directory v2.36.0
+- **Webhook API endpoint authorization (C2):** Gated `/api/webhook` with `middleware.auth` and `app_sso_admin`, validated webhook URLs, and stripped private fields.
+- **Join-key rotation verification (H1 / Contract G-2):** Enforced `?prev_token=` authentication for agent join key rotation requests to prevent unauthorized hostname takeover.
+- **LDAP search base scoping and attribute filtering (H2):** Restricted `/api/v1/ldap/search` base DN to user/group bases and stripped sensitive attributes (`userPassword`, `sshPrivateKey`).
+- **OpenLDAP ACL hardening (H3):** Hardened slapd ACLs to `access to * by * none`, granting read access strictly to authenticated service accounts and rootdn.
+- **Session invalidation and deactivation check (H4):** Added direct Redis session token invalidation on logout, enforced a 30-day TTL on session tokens, and rejected authentication for deactivated/locked users.
+- **Invite token redemption atomicity (H5):** Corrected invite token verification logic to prevent reused or double-redeemed invite tokens.
+- **Signed agent desktop commands (H7 / Contract G-1):** Implemented Ed25519 signature generation over `{type, payload}` canonical envelope for desktop and systemd commands.
+- **Spoke write proxy HMAC authentication (H14 / Contract G-4):** Added `x-forwarded-mac` HMAC token validation for spoke-to-master request proxying.
+- **Docker entrypoint slapd.conf generation (H15):** Removed leading whitespace in `docker-entrypoint.sh` here-doc delimiter that caused broken slapd configurations on fresh container starts.
+- **Authenticated OpenLDAP healthcheck and seeding (H16):** Updated `waitForSlapd` and container reboot verification in `docker-entrypoint.sh` to use authenticated admin queries under hardened ACLs.
+- **User enumeration protections (M26):** Standardized response times and generic responses on OTP and password reset endpoints to mitigate username enumeration.
+- **User profile endpoint access control (M27):** Gated `GET /api/user/:uid` to self or users with `app_sso_admin` group membership.
+- **Constant-time OTP comparison (M28):** Replaced direct string equality with `crypto.timingSafeEqual` for OTP codes and handled missing OAuth client secrets gracefully.
+- **LDAP DN escaping in rollback paths (M29):** Escaped DN values when rolling back or removing users and groups from LDAP.
+- **Redis URL operator precedence (M37):** Fixed ternary operator precedence in `metrics.js` Redis client initialization.
+- **Docker test runner (M40):** Added `test_runner.js` and complete Docker Compose test harnesses (`docker-compose.test.yml`, `docker-compose.e2e.yml`, `docker-compose.multisite-e2e.yml`).
+
+### jump-host v3.7.0
+- **Exit downgrade rule cleanup (H8):** Rule removal is now keyed on `(from, table)` pairs instead of `from` alone, ensuring stale routing rules steering devices to departed exit gateways are deleted even if the device address remains active.
+- **Missing controller copy in Docker image (H17):** Added `COPY nodejs/controller ./controller` to `Dockerfile`, resolving container startup failure (`MODULE_NOT_FOUND` in `bin/www`).
+- **Allowed-IPs parsing in peer removal (M17):** `removePeer` splits allowed IPs with `/\s*,\s*/` to properly strip whitespace/commas and prevent blackhole routes when a peer is removed.
+- **Mesh reconciliation race conditions (M18):** `POST /api/mesh/reconcile` now invokes serialized `runReconcile()` instead of raw `reconcileMesh()`.
+- **Stale NETMAP teardown (M19):** `planReconcile` now tracks applied NETMAPs in Redis and reconciles stale mappings down via `removeNetmap`.
+- **Redis password protection (M20):** `install.sh` and Docker entrypoint now enforce `requirepass` for local Redis instances.
+- **Inbound key collision protection (M21):** Compares full parsed WireGuard identity public key rather than key comments to prevent cross-site identity confusion.
+- **Host key persistence path (M22):** Supports `app_ssh__hostKeyPath` configuration to ensure persistent SSH host keys across Docker deployments.
+- **Mesh state module exports (M36):** Restored `EXIT_KEYPAIR_KEY` and exported all reconciliation methods (`planReconcile`, `applyPlan`, `localIdentity`, etc.).
+- **Metrics SCAN pattern (L7):** Corrected Redis key search to use `host_c*` and exclude non-counter keys.
+- **Super admin group preservation (L8):** Preserves `app_super_admin` in `adminGroups`.
+- **3-Site WireGuard Mesh E2E Integration Suite:** Added `docker-compose.mesh-e2e.yml` testing mesh identity publishing, cross-site handshakes, shadow LAN translation, exit routing, and policy routing.
+
+### proxy v2.5.0
+- **Certificate API endpoint security (C3):** Gated `GET /api/cert/:host` with `requireAdmin`, stripped `privkey_pem` and `csr_pem` from responses, and corrected `deleteCert(this.host)` call.
+- **Open redirect protection (M8):** Gated `safeRd` / `safeInternalPath` against protocol-relative paths (`/\evil.com`) and backslash evasion.
+- **Lookup Unix socket permissions (M9):** Set lookup Unix domain socket permissions to `0666` for nobody worker cosockets.
+- **Unhandled rejection in host caching (M10):** Awaited `Host.addCache` with catch/warn to prevent unhandled promise rejections on host additions.
+- **LDAP connection concurrency (M11):** Used per-request LDAP clients and mutexes around shared instances for authentication binds.
+- **Proxy token TTL and revocation (M12):** Added 30-day TTL to proxy auth tokens and enforced server-side Redis token revocation on logout.
+- **Cache leakage on authenticated hosts (M23):** Explicitly disabled Nginx response caching (`proxy_cache off`) for hosts with authentication/SSO enabled.
+- **SSO callback HTTPS enforcement (M24):** Enforced HTTPS protocol redirect on `/__proxy_auth` and preserved HTTPS callback URLs when deployed behind reverse proxies.
+- **Basic auth timing attack protection (M34):** Implemented constant-time string comparison for basic auth credentials in OpenResty Lua and marked `basicauth_users` private.
+- **Null certificate crash guard (M38):** Guarded against null certificate return in `GET /api/cert/:host` to return 404 instead of throwing a `TypeError`.
+- **SSO cookie Secure flag (M39):** Added `X-Forwarded-Proto` header inspection alongside `req.protocol` to ensure SSO session cookies set the `Secure` attribute behind TLS-terminating proxies.
+- **Redirect query string preservation (L3):** Preserved URL query strings and sanitized redirect targets during host-auth challenge flows.
+
+### theta-agent v2.21.0
+- **Local IPC privilege escalation hardening (H6):** Enforced `SO_PEERCRED` checks on `/run/theta/tray.sock` requiring mutating commands (`restart`, `update`, `reload`) to originate from EUID 0 (root).
+- **Cryptographic command envelope verification (H7 / Contract G-1):** Implemented strict Ed25519 signature verification across all desktop control actions, service restarts, and update binary payloads over `{type, payload}` canonical envelope.
+- **Service name validation and config permissions (H9):** Added service name character allowlist (`[a-zA-Z0-9_-]+`), explicit `0600` permissions when writing `agent.yml`, and literal string replacements for `/etc/hosts` entries.
+- **WebSocket limits and deadlines (M13):** Set 1 MiB message read limits, explicit pong handlers, read deadlines, and timeouts on binary downloads.
+- **Connection backoff on superseded code (M14):** Added backoff jitter when receiving close code `4002` (superseded connection).
+- **Tray socket multi-path binding (M15):** Dial and bind sequentially across `/run/theta/tray.sock`, `/run/user/<uid>/theta-agent/tray.sock`, and `%LOCALAPPDATA%\ThetaAgent\tray.sock`.
+- **Nil dereference protection (M16):** Added nil checks across discovery data gathering and WebSocket URL parsing.
+- **Cron probe path traversal protection (M30):** Validated service names before probing `/etc/cron.*` to prevent directory traversal.
+- **Zpool scrub support (M31):** Implemented verified `zpool_scrub` control handler.
+- **Verbose logging flag (L4):** Guarded high-volume debug logs behind `verbose_logging` configuration option.
+- **WebSocket Authorization Header (L5):** Added `Authorization: Bearer <token>` HTTP header during WebSocket handshake.
+
+### ldap-client v1.26.0
+- **Bind password protection (C4):** Directory bind password is now written to `/etc/ldap-ssh-key.pass` (mode `0640 root:nogroup`) and read via `ldapsearch -y`, eliminating command-line password exposure.
+- **LDAPS support (C4):** Added configurable `ldap_tls_reqcert` (default `demand`, `never` for loopback) and default `ldaps://` communication.
+- **Host name slugification (H11 / Contract G-5):** Location and host names are slugified before inclusion in `ldap_access_filter` and directory registration payloads, preventing lockout on special characters.
+- **Unscoped sudo role deprecation (H12):** Removed unconditional `sudoRole` stamping on new accounts pending per-host scoped sudo implementation.
+- **SSSD cutover rollback and template safety (M32):** Render templates with `--fail-not-set`, back up `nsswitch.conf` before cutover with automatic rollback on SSSD start failure, and enforce `umask 0077`.
+- **Safe JSON payload encoding (M33):** Built registration JSON payloads with native JSON serialization tools (`jq`/`python3`/`node`).
+- **Slugification test suite:** Added `test_slug.sh` unit test verifying canonical slugification parity.
+
 ## [3.34.0] - 2026-08-28
 
 The resource directory redesign is finished, and for the first time it was opened in a
