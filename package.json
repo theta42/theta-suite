@@ -1,6 +1,6 @@
 {
   "name": "theta-suite",
-  "version": "3.36.19",
+  "version": "3.36.20",
   "description": "Theta Suite — Unified Identity, Reverse Proxy, Jump Host, and Agent Ecosystem",
   "private": true,
   "scripts": {
