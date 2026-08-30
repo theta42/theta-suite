@@ -1,3 +1,8 @@
+## [3.36.9] - 2026-08-29
+
+### theta-directory v2.36.4
+- **Theta Agent Driver Metrics**: Fixed `getMetrics()` in `drivers/theta_agent_driver.js` to correctly handle plain public agent objects returned by `AgentManager.getAgentForResource()`, resolving `TypeError: agent.toPublic is not a function`.
+
 ## [3.36.8] - 2026-08-29
 
 ### theta-directory v2.36.3
