@@ -1,3 +1,9 @@
+## [3.36.14] - 2026-08-30
+
+### theta-directory v2.36.9
+- **Directory Modal Footer Layout**: Moved View/Edit mode toggle to bottom-right modal footer alongside Close and Save buttons.
+- **Modal Footer Audit Information**: Formatted `created_on` and `updated_on` timestamps even when `created_by`/`updated_by` are null (such as on discovered or system-provisioned resources).
+
 ## [3.36.13] - 2026-08-29
 
 ### theta-directory v2.36.8
