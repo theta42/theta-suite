@@ -1,3 +1,12 @@
+## [3.36.11] - 2026-08-29
+
+### theta-directory v2.36.6
+- **Resource Admin Endpoints**: Added `GET /api/directory-admin/resources/:id` endpoint (supporting ID and slug lookup) and added `?all=true` query support to `GET /api/directory-admin/resources` to retrieve the complete directory inventory including unmanaged items.
+- **Idempotent Resource Creation**: Made `POST /api/directory-admin/resources` safely update pre-existing discovered items on slug match without failing with unique constraint violations.
+
+### Bootstrap
+- **Robust Resource Seeding**: Made `ensure()` in `bootstrap/bootstrap.js` search and recover pre-existing discovered or unmanaged resources on slug match and update them with `managed: true`.
+
 ## [3.36.10] - 2026-08-29
 
 ### theta-directory v2.36.5

@@ -560,30 +560,51 @@ async function seedDirectory(token, clientId, jumpClientId) {
 	// are never overwritten.
 	async function ensure(kind, name, slug, parentId, metadata, altSlugs) {
 		const slugs = [slug, ...(altSlugs || [])];
-		const found = resources.find((r) => slugs.includes(r.slug));
+		let found = resources.find((r) => slugs.includes(r.slug));
+		if (!found) {
+			for (const s of slugs) {
+				try {
+					const res = await dirGet(token, `resources/${s}`);
+					if (res && res.id) {
+						found = res;
+						resources.push(found);
+						break;
+					}
+				} catch (e) {}
+			}
+		}
 		if (found) {
 			const have = found.metadata || {};
 			const missing = Object.entries(metadata || {})
 				.filter(([k, v]) => (have[k] === undefined || have[k] === '') && v !== '');
-			if (missing.length) {
-				const merged = { ...have };
-				for (const [k, v] of missing) merged[k] = v;
-				// metadata-only PUT: no kind/hostId in the body, so the route's
-				// parent validation and edge rewiring are not triggered.
-				await dirPut(token, `resources/${found.id}`, { metadata: merged });
-				found.metadata = merged;
-				log(`  directory: ${kind} '${found.slug}' exists — filled ${missing.map(([k]) => k).join(', ')}`);
-			} else {
-				log(`  directory: ${kind} '${found.slug}' exists — keeping`);
-			}
+			const merged = { ...have };
+			for (const [k, v] of missing) merged[k] = v;
+			if (parentId && !have.hostId) merged.hostId = parentId;
+			if (merged.managed !== true) merged.managed = true;
+			await dirPut(token, `resources/${found.id}`, { metadata: merged }).catch(() => {});
+			found.metadata = merged;
+			log(`  directory: ${kind} '${found.slug}' exists — updated`);
 			return found;
 		}
-		const body = { kind, name, slug, metadata: metadata || {} };
+		const body = { kind, name, slug, metadata: { ...(metadata || {}), managed: true } };
 		if (parentId) body.hostId = parentId; // POST creates the parent edge
-		const created = (await dirPost(token, 'resources', body)).results;
-		resources.push(created);
-		log(`  directory: created ${kind} '${slug}'`);
-		return created;
+		try {
+			const created = (await dirPost(token, 'resources', body)).results;
+			resources.push(created);
+			log(`  directory: created ${kind} '${slug}'`);
+			return created;
+		} catch (err) {
+			if (err.message && err.message.includes('already exists')) {
+				const existing = (await dirGet(token, `resources/${slug}`).catch(() => ({})));
+				if (existing && existing.id) {
+					await dirPut(token, `resources/${existing.id}`, { metadata: { ...(existing.metadata || {}), ...(metadata || {}), managed: true } }).catch(() => {});
+					resources.push(existing);
+					log(`  directory: ${kind} '${slug}' existing recovered`);
+					return existing;
+				}
+			}
+			throw err;
+		}
 	}
 
 	// site_<name> / host_<name> slug convention matches ldap-client/index.sh.
