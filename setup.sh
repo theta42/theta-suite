@@ -2272,6 +2272,18 @@ LDAPVARS
 	else
 		info "  theta-agent running with limited capabilities (CFG_THETA_AGENT_FULL_CONTROL=0)."
 	fi
+
+	# Register stack Docker containers with theta-agent for live container telemetry & monitoring
+	info "  Registering stack Docker containers with theta-agent..."
+	for _cname in proxy sso-manager openbao bao-renewer; do
+		if docker inspect "$_cname" >/dev/null 2>&1; then
+			$SUDO /usr/local/bin/theta-agent register docker "$_cname" 2>/dev/null || true
+		fi
+	done
+	if [[ "${CFG_JUMP_HOST_ENABLE:-1}" == "1" ]] && docker inspect jump-host >/dev/null 2>&1; then
+		$SUDO /usr/local/bin/theta-agent register docker jump-host 2>/dev/null || true
+	fi
+
 	$SUDO systemctl enable theta-agent.service 2>/dev/null || true
 	$SUDO systemctl restart theta-agent.service 2>/dev/null || true
 else
