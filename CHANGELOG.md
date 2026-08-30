@@ -1,3 +1,8 @@
+## [3.36.12] - 2026-08-29
+
+### theta-directory v2.36.7
+- **Live Service Metrics Target Resolution**: Fixed `targetService` resolution and telemetry lookup in `drivers/theta_agent_driver.js` so service resources correctly match their reported container/service telemetry and populate live CPU, RAM, uptime, and substate.
+
 ## [3.36.11] - 2026-08-29
 
 ### theta-directory v2.36.6
