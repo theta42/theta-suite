@@ -1,3 +1,9 @@
+## [3.36.20] - 2026-08-30
+
+### theta-agent v2.21.5 & theta-directory v2.36.14
+- **Unified Agent Config Delivery**: Consolidated welcome/config frame push so connecting and reconnecting agents reliably receive full home hints (`site_lan_endpoint`, `site_public_ip`, `site_name`, `organization_name`).
+- **Dynamic Site Name & Branding**: Pushed site name and branding directly to agents, updating the desktop tray status dynamically.
+
 ## [3.36.19] - 2026-08-30
 
 ### theta-agent v2.21.4
