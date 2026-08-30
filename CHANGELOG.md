@@ -1,3 +1,9 @@
+## [3.36.16] - 2026-08-30
+
+### theta-directory v2.36.11 & theta-agent v2.21.2
+- **Agent Self-Enrollment Site Hint Resolution**: WebSocket endpoint `/api/agent/ws` and `resolveSiteHint` now treat placeholder locations (`unknown`, `default`, `none`) as unhinted connections and properly fall back to `currentSite()`, preventing agent self-enrollment rejection with `close 4001: Site not found: unknown`.
+- **Agent Installer Script (`install.sh`)**: Updated default config template to use `location: "default"` instead of `location: "unknown"`, automatically normalize existing placeholder configs, and added support for `--location` / `--site` CLI argument.
+
 ## [3.36.15] - 2026-08-30
 
 ### theta-directory v2.36.10
