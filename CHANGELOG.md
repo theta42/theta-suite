@@ -1,3 +1,8 @@
+## [3.36.15] - 2026-08-30
+
+### theta-directory v2.36.10
+- **Auto-Purge Vanished Discovered Resources**: During discovery reconciliation for structural sources (Proxmox, Docker, etc.), any resource previously created by that discovery source that is no longer reported in the inventory payload is now automatically purged along with its pruned edges, preventing deleted guests/containers from lingering as parentless orphaned root nodes in the directory graph.
+
 ## [3.36.14] - 2026-08-30
 
 ### theta-directory v2.36.9
