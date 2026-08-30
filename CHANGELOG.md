@@ -1,3 +1,11 @@
+## [3.36.8] - 2026-08-29
+
+### theta-directory v2.36.3
+- **Directory Resource Update API**: Fixed `PUT /api/directory-admin/resources/:id` parent validation to permit partial metadata and field updates on existing parented resources without requiring `hostId` in the request body.
+
+### Bootstrap
+- **Jump Host Secrets Generation**: Fixed `JUMP_SSH_PORT` template variable interpolation in `writeJumpSecrets` in `bootstrap/bootstrap.js`.
+
 ## [3.36.7] - 2026-08-29
 
 ### theta-directory v2.36.2
