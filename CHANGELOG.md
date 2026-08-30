@@ -1,3 +1,10 @@
+## [3.36.18] - 2026-08-30
+
+### theta-agent v2.21.3 & theta-directory v2.36.13
+- **Passive mDNS Home Sensing**: Enabled background mDNS browsing loop unconditionally in `theta-agent` so home detection can sense the local site broadcast domain on the LAN without requiring `local_discovery: true` (hosts override).
+- **Config Payload Processing**: Fixed early return on `enrolled: true` in `theta-agent`'s WebSocket config handler, ensuring `site_lan_endpoint`, `site_public_ip`, and `organization_name` are extracted and applied on initial enrollment.
+- **Dynamic Public IP & Stack Host LAN Endpoint Hints**: `homeDetectHints` now dynamically resolves the site public IP (via `dns.lookup` on `ssoHost` / gateway endpoint) and includes the stack host's reverse proxy address (`${ip}:443`) in addition to DNS resolver (`${dnsHost}:53`).
+
 ## [3.36.17] - 2026-08-30
 
 ### theta-directory v2.36.12
