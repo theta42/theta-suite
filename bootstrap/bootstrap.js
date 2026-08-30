@@ -632,6 +632,8 @@ async function seedDirectory(token, clientId, jumpClientId) {
 		port: 3001,
 		gitRepo: 'https://github.com/theta42/sso-manager-node',
 		subType: 'web',
+		dockerContainer: 'sso-manager',
+		serviceName: 'sso-manager',
 		icon: 'mdi:shield-account',
 		tagline: 'Home-lab identity and access management.',
 		requestable: false,
@@ -645,6 +647,8 @@ async function seedDirectory(token, clientId, jumpClientId) {
 		port: 3000,
 		gitRepo: 'https://github.com/theta42/proxy',
 		subType: 'web',
+		dockerContainer: 'proxy',
+		serviceName: 'proxy',
 		icon: 'mdi:server-network',
 		tagline: 'Reverse proxy and API gateway.',
 		requestable: false,
@@ -687,6 +691,10 @@ async function seedDirectory(token, clientId, jumpClientId) {
 		if (r.slug === 'openbao' || r.slug === 'openboa' || r.slug === 'bao-renewer' || (r.name && (/openbao|openboa|bao-renewer/i.test(r.name)))) {
 			await dirDelete(token, `resources/${r.id}`).catch(() => {});
 		}
+		// Clean up legacy Docker discovery plugin artifacts (e.g. docker-theta-suite-*)
+		if (r.slug && r.slug.startsWith('docker-')) {
+			await dirDelete(token, `resources/${r.id}`).catch(() => {});
+		}
 	}
 
 	// SSH jump host service (core component — always registered).
@@ -698,6 +706,8 @@ async function seedDirectory(token, clientId, jumpClientId) {
 			port: 3002,
 			gitRepo: 'https://github.com/theta42/jump-host',
 			subType: 'ssh',
+			dockerContainer: 'jump-host',
+			serviceName: 'jump-host',
 			icon: 'mdi:ssh',
 			tagline: 'Secure SSH jump host.',
 			requestable: false,
@@ -768,7 +778,7 @@ async function seedDirectory(token, clientId, jumpClientId) {
 			log(`  directory: '${label}' still has children after reparenting — leaving it for now`);
 			return;
 		}
-		await dirDelete(token, `resources/${resource.id}`);
+		await dirDelete(token, `resources/${resource.id}`).catch(() => {});
 		log(`  directory: removed now-empty synthetic host '${label}'`);
 	}
 	await removeIfChildless(proxyHostRes, 'host_theta-proxy');
@@ -791,107 +801,30 @@ async function seedDirectory(token, clientId, jumpClientId) {
 	await linkOauthClient(jumpClientId, jumpSvc, 'jump-host');
 }
 
-// ── Plugin instances ────────────────────────────────────────────────────────
-// Seed a sensible default set of plugin instances so the stack is usable the
-// moment it boots, without the operator having to add them by hand. The setup
-// stack runs on Docker, so the single biggest win is a Docker discovery plugin
-// pointed at the local daemon socket: containers that make up the stack (and
-// any others on the host) get discovered into the Directory automatically.
-// Idempotent per slug: an instance an operator already created is left alone.
-async function seedPlugins(token) {
-	async function pluginGet(path) {
-		const res = await fetch(`${SSO_INTERNAL}/api/plugins/${path}`, {
+// ── Plugin instances & cleanup ──────────────────────────────────────────────
+// Clean up deprecated docker discovery plugin instances (and legacy
+// docker-theta-suite-* container artifacts) if present from an earlier
+// install, migrating docker container monitoring to native theta-agent integration.
+async function cleanupLegacyDockerPlugins(token) {
+	try {
+		const res = await fetch(`${SSO_INTERNAL}/api/plugins/`, {
 			headers: { 'auth-token': token },
 		});
-		if (!res.ok) throw new Error(`GET /api/plugins/${path} failed (${res.status})`);
-		return res.json();
-	}
-	async function pluginPost(body) {
-		const res = await fetch(`${SSO_INTERNAL}/api/plugins/`, {
-			method: 'POST',
-			headers: { 'auth-token': token, 'Content-Type': 'application/json' },
-			body: JSON.stringify(body),
-		});
-		if (!res.ok) {
-			const text = await res.text().catch(() => '');
-			throw new Error(`POST /api/plugins failed (${res.status}): ${text}`);
+		if (res.ok) {
+			const data = await res.json();
+			const plugins = (data && data.results) || [];
+			for (const p of plugins) {
+				if (p.slug === 'docker-local' || p.pluginType === 'docker') {
+					await fetch(`${SSO_INTERNAL}/api/plugins/${p.id}`, {
+						method: 'DELETE',
+						headers: { 'auth-token': token },
+					}).catch(() => {});
+					log(`  plugins: cleaned up deprecated 'docker-local' plugin instance`);
+				}
+			}
 		}
-		return res.json();
-	}
-
-	async function pluginPatch(id, body) {
-		const res = await fetch(`${SSO_INTERNAL}/api/plugins/${id}`, {
-			method: 'PUT',
-			headers: { 'auth-token': token, 'Content-Type': 'application/json' },
-			body: JSON.stringify(body),
-		});
-		if (!res.ok) {
-			const text = await res.text().catch(() => '');
-			throw new Error(`PUT /api/plugins/${id} failed (${res.status}): ${text}`);
-		}
-		return res.json();
-	}
-
-	// Keeping an existing instance is right -- its config is operator-editable
-	// and must not be stomped on every boot. But a config KEY this bootstrap
-	// has since learned to set, and which the instance has never had, is not an
-	// operator choice: it is a gap. Backfilling only absent keys upgrades an
-	// existing install without touching anything a human may have changed.
-	async function ensurePlugin({ pluginType, name, slug, config }) {
-		const existing = ((await pluginGet('')).results) || [];
-		const found = existing.find((i) => i.slug === slug);
-		if (found) {
-			const have = found.config || {};
-			const missing = {};
-			for (const [k, v] of Object.entries(config || {})) {
-				if (v !== '' && v != null && have[k] === undefined) missing[k] = v;
-			}
-			if (Object.keys(missing).length === 0) {
-				log(`  plugins: '${slug}' exists — keeping`);
-				return;
-			}
-			if (!found.id) {
-				log(`  plugins: '${slug}' exists — cannot backfill ${Object.keys(missing).join(', ')} (no instance id)`);
-				return;
-			}
-			try {
-				await pluginPatch(found.id, { config: { ...have, ...missing } });
-				log(`  plugins: '${slug}' exists — backfilled ${Object.keys(missing).join(', ')}`);
-			} catch (e) {
-				log(`  plugins: '${slug}' exists — could not backfill ${Object.keys(missing).join(', ')} (${e.message || e})`);
-			}
-			return;
-		}
-		await pluginPost({ pluginType, name, slug, config });
-		log(`  plugins: created '${slug}' (${pluginType})`);
-	}
-
-	try {
-		// The Docker daemon the setup stack itself runs under. The socket must be
-		// mounted into the sso container for discovery to reach it; if it isn't,
-		// discovery simply errors non-fatally until it is.
-		await ensurePlugin({
-			pluginType: 'docker',
-			name: 'Local Docker daemon',
-			slug: 'docker-local',
-			config: {
-				socketPath: '/var/run/docker.sock',
-				// Containers in our own compose project are the stack itself --
-				// already seeded as services above. Telling the plugin which
-				// project that is lets it mark them managed and attach them to
-				// the service they implement, instead of a fresh install
-				// presenting its own five containers as unmanaged discoveries.
-				stackProject: process.env.COMPOSE_PROJECT_NAME || 'theta-suite',
-				hostSlug: HOST_FACTS.name ? `host_${slugify(HOST_FACTS.name)}` : '',
-				// Service resources are seeded above as `<service>-${SITE_SLUG}`.
-				// Without this the plugin emits edges naming a parent that does
-				// not exist, and the stack's own containers end up with no
-				// parent at all.
-				serviceSuffix: SITE_SLUG,
-			},
-		});
 	} catch (e) {
-		log(`WARNING: plugin seed failed (${e.message || e}) — continuing`);
+		log(`  plugins: cleanup error (${e.message || e}) — continuing`);
 	}
 }
 
@@ -1292,13 +1225,13 @@ async function provisionJumpHost(token) {
 			log(`WARNING: directory seed failed (${e.message || e}) — continuing`);
 		}
 
-		// Seed default plugin instances (Docker discovery) — same warn-and-go
-		// policy; a stack without plugins is still usable.
+		// Clean up deprecated plugin instances (e.g. docker discovery) — warn-and-go
+		// policy; native theta-agent docker integration replaces the plugin.
 		try {
-			log('Seeding default plugins...');
-			await seedPlugins(token);
+			log('Cleaning up deprecated plugins...');
+			await cleanupLegacyDockerPlugins(token);
 		} catch (e) {
-			log(`WARNING: plugin seed failed (${e.message || e}) — continuing`);
+			log(`WARNING: plugin cleanup failed (${e.message || e}) — continuing`);
 		}
 
 		log('Done.');

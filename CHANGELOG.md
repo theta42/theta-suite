@@ -1,3 +1,14 @@
+## [3.36.7] - 2026-08-29
+
+### theta-directory v2.36.2
+- **Decommission Docker discovery plugin**: Removed `plugins/discovery/docker.js` and direct Docker socket dependency from the SSO container. Container discovery, metrics, and actions are now handled natively via `theta-agent` host integration.
+- **Service Telemetry Reconciliation**: Enhanced `utils/agent_manager.js` to match existing bootstrap service resources (`proxy`, `sso-manager`, `jump-host`) on container/service names, eliminating duplicate child nodes while binding live agent telemetry and control actions.
+
+### Stack & Bootstrap
+- **Docker Compose Security**: Removed `/var/run/docker.sock` volume mount from `sso-manager` in `docker-compose.yml`.
+- **Bootstrap Cleanup**: Replaced `seedPlugins` (which previously seeded `docker-local`) with `cleanupLegacyDockerPlugins` to clean up deprecated plugin instances and legacy `docker-*` container artifacts.
+- **Theta-Agent Host Docker Registration**: Updated `setup.sh` to automatically register the stack's containers (`proxy`, `sso-manager`, `openbao`, `bao-renewer`, `jump-host`) with `theta-agent` under `/etc/theta42/agent.yml`.
+
 ## [3.36.6] - 2026-08-29
 
 ### theta-directory v2.36.1
