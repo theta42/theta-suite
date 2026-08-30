@@ -632,8 +632,6 @@ async function seedDirectory(token, clientId, jumpClientId) {
 		port: 3001,
 		gitRepo: 'https://github.com/theta42/sso-manager-node',
 		subType: 'web',
-		dockerContainer: 'sso-manager',
-		serviceName: 'sso-manager',
 		icon: 'mdi:shield-account',
 		tagline: 'Home-lab identity and access management.',
 		requestable: false,
@@ -647,8 +645,6 @@ async function seedDirectory(token, clientId, jumpClientId) {
 		port: 3000,
 		gitRepo: 'https://github.com/theta42/proxy',
 		subType: 'web',
-		dockerContainer: 'proxy',
-		serviceName: 'proxy',
 		icon: 'mdi:server-network',
 		tagline: 'Reverse proxy and API gateway.',
 		requestable: false,
@@ -685,13 +681,8 @@ async function seedDirectory(token, clientId, jumpClientId) {
 		requestable: false,
 	}, ['openresty']);
 
-	// Remove or set ignored on OpenBao/bao-renewer seed resources if present — OpenBao is an
-	// internal stack service, not a user-facing published directory service.
+	// Clean up legacy Docker discovery plugin artifacts (e.g. docker-theta-suite-*)
 	for (const r of resources) {
-		if (r.slug === 'openbao' || r.slug === 'openboa' || r.slug === 'bao-renewer' || (r.name && (/openbao|openboa|bao-renewer/i.test(r.name)))) {
-			await dirDelete(token, `resources/${r.id}`).catch(() => {});
-		}
-		// Clean up legacy Docker discovery plugin artifacts (e.g. docker-theta-suite-*)
 		if (r.slug && r.slug.startsWith('docker-')) {
 			await dirDelete(token, `resources/${r.id}`).catch(() => {});
 		}
@@ -706,8 +697,6 @@ async function seedDirectory(token, clientId, jumpClientId) {
 			port: 3002,
 			gitRepo: 'https://github.com/theta42/jump-host',
 			subType: 'ssh',
-			dockerContainer: 'jump-host',
-			serviceName: 'jump-host',
 			icon: 'mdi:ssh',
 			tagline: 'Secure SSH jump host.',
 			requestable: false,
@@ -790,12 +779,16 @@ async function seedDirectory(token, clientId, jumpClientId) {
 		if (!id || !parent) return;
 		const oauthRes = resources.find((r) => r.id === id);
 		if (!oauthRes) return;
-		const linked = edges.some((e) => e.childId === id);
-		if (!linked) {
-			await dirPost(token, 'edges', { parentId: parent.id, childId: id, relation: 'oauth' });
-			edges.push({ parentId: parent.id, childId: id, relation: 'oauth' });
-			log(`  directory: linked OAuth client under '${label}'`);
+		const existingEdge = edges.find((e) => e.childId === id);
+		if (existingEdge && existingEdge.parentId === parent.id) return;
+		if (existingEdge) {
+			await dirDelete(token, `edges/${existingEdge.id}`).catch(() => {});
+			const idx = edges.indexOf(existingEdge);
+			if (idx !== -1) edges.splice(idx, 1);
 		}
+		const created = await dirPost(token, 'edges', { parentId: parent.id, childId: id, relation: 'oauth' });
+		edges.push({ id: (created && created.results && created.results.id) || (created && created.id), parentId: parent.id, childId: id, relation: 'oauth' });
+		log(`  directory: linked OAuth client under '${label}'`);
 	}
 	await linkOauthClient(clientId, psvc, 'proxy');
 	await linkOauthClient(jumpClientId, jumpSvc, 'jump-host');
