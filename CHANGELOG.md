@@ -1,3 +1,8 @@
+## [3.36.13] - 2026-08-29
+
+### theta-directory v2.36.8
+- **Telemetry Resolution & Field Mapping**: Supported both `lastTelemetry` and `latestTelemetry` in `drivers/theta_agent_driver.js`, correctly reading live Docker/systemd service states, CPU %, RAM bytes, and uptime.
+
 ## [3.36.12] - 2026-08-29
 
 ### theta-directory v2.36.7
