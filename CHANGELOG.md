@@ -1,3 +1,10 @@
+## [3.36.19] - 2026-08-30
+
+### theta-agent v2.21.4
+- **Desktop Tray Permissions**: Fixed tray IPC socket credential check so the desktop user can toggle auto-connect VPN, connect/disconnect, and choose internet exit gateways from the tray UI.
+- **Remote Exit & Auto-VPN Coordination**: Fixed tunnel activation policy so picking a remote exit raises the tunnel regardless of auto-vpn setting, while selecting local breakout or disconnecting cleanly tears down WireGuard.
+- **Immediate Tray UI Synchronization**: Proactive status push on every tray interaction and config update so the desktop tray state immediately reflects reality.
+
 ## [3.36.18] - 2026-08-30
 
 ### theta-agent v2.21.3 & theta-directory v2.36.13
