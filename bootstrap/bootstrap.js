@@ -1055,7 +1055,7 @@ module.exports = {
 \t\tapiToken: ${JSON.stringify(apiToken)},
 	},
 	ssh: {
-		listenPort: JUMP_SSH_PORT,
+		listenPort: ${JUMP_SSH_PORT},
 		hostKeyPath: '/opt/theta-suite/.persist/jump-host/keys',
 		passwordAuth: 'off',
 		keyComment: ${JSON.stringify(`jump-host@${siteName}`)},
