@@ -1,3 +1,18 @@
+## [3.36.21] - 2026-08-30
+
+### theta-directory v2.36.16 & theta-agent v2.21.6
+- **Multi-Site WireGuard Client & Exit Grant Replication**:
+  - Export `MeshClient` and `MeshExitGrant` models in `POST /api/site/export` alongside cluster roster and catalog resources.
+  - Adopt remote `meshClients` and `meshExitGrants` on spoke join and live resync (`meshClients.adoptClients`), enabling remote spoke gateways to correctly populate exit client allowed IPs on their WireGuard mesh interfaces.
+  - Added live replication triggers on client and exit grant mutations (`enroll`, `setExit`, `grantExit`, `revokeExit`).
+  - Added proxy forwarding rules in `spoke_write_proxy.js` so mesh client mutations initiated on spokes forward directly to master.
+- **WireGuard Interface Teardown & Lifecycle Cleanup**:
+  - Fixed `theta-agent` daemon shutdown to actively remove the `theta-mesh` WireGuard interface (`defaultPlatformOps.RemoveWireGuard()`), preventing lingering kernel interfaces and broken routing when stopping the daemon.
+  - Added `ExecStopPost=-/usr/bin/wg-quick down theta-mesh` to `theta-agent.service` systemd unit.
+- **Desktop Companion Configuration Access**:
+  - Updated `theta-agent`'s `install.sh` to add the active desktop user (`$SUDO_USER`) to the `theta-secrets` group.
+  - Adjusted configuration permissions (`0755` directory / `0644` file) so non-root desktop applications and "Open Config" in the tray companion open without permission errors.
+
 ## [3.36.20] - 2026-08-30
 
 ### theta-agent v2.21.5 & theta-directory v2.36.14
