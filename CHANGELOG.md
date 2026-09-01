@@ -1,3 +1,12 @@
+## [3.36.23] - 2026-09-01
+
+### theta-directory (sso-manager) v2.36.17
+- **Resource Identity Matcher Safety Gap**: The Directory's agent-host consolidation logic (merging an agent's auto-created placeholder host into a richer existing one) maintained its own independent MAC/IP/name matcher with no site scoping and no guard against hijacking a resource that already has its own MAC identity — a false match there deletes the placeholder host and reparents its edges. Extracted the well-guarded matcher already used elsewhere into a shared module and routed this path through it, adding the site-scoping and hijack guard it never had.
+- **theta-agent Telemetry Never Outranked Proxmox for Guest Hosts**: The Directory's documented "prefer a connected agent over a hypervisor API" rule never actually fired for a Proxmox-guest host with a bound agent, because the agent lookup had no "host → its own agent-service child" resolution direction. This is also why a richer telemetry dashboard and an already-working active-sessions feature never rendered for any Proxmox guest with an agent installed.
+- **Status Badge Contradicted Its Own State Text**: A service with no reported telemetry rendered a green "Active" badge directly beside a "State: inactive" row for the same undefined value. Introduced a real active/inactive/unknown tri-state; unknown now disables every control button instead of assuming the service is running.
+- **Divergent Status-Bucket Counting**: Three independent copies of the same health-bucket counting logic disagreed with each other. Consolidated into one function.
+- **Added — Per-Source Fact Provenance & Meshed Facts Card**: Every discovery source's contribution to a resource now survives merges additively (`metadata.facts_by_source`), alongside the existing metadata merge which is unchanged. The Status tab now meshes a host's own facts with its children's — badged by source, flagged when sources disagree, with pulled-up Start/Stop/Restart controls for controllable children — replacing a rollup table that only restated children already listed elsewhere without integrating anything about them.
+
 ## [3.36.22] - 2026-09-01
 
 ### theta-agent v2.21.7
