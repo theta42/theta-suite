@@ -1,3 +1,8 @@
+## [3.36.26] - 2026-09-01
+
+### theta-directory (sso-manager) v2.36.20
+- **Meshed Facts Card No Longer Restates the Self-Card Above It**: A concept (CPU/memory/disk) with only the host's own entries is now dropped from the meshed facts card, instead of restating the exact same number already shown immediately above it. A concept where a child also contributes keeps the host's own entry too — that comparison is the actual reason the mesh exists.
+
 ## [3.36.25] - 2026-09-01
 
 ### theta-directory (sso-manager) v2.36.19
