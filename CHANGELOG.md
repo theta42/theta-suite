@@ -1,3 +1,9 @@
+## [3.36.22] - 2026-09-01
+
+### theta-agent v2.21.7
+- **Desktop Tray Flapping Between Home and Away With No Network Change**: The passive mDNS home-sensing loop mirrored the raw result of only its single most recent 30s poll, so one dropped multicast response (WiFi driver power-save / IGMP snooping loss — noise unrelated to which network the host is actually on) instantly flipped cached "home" state to "away." When the 60s home-monitor tick sampled during that transient gap, the desktop tray flashed yellow for one cycle before self-correcting on the next tick — a visible flap with no underlying network change. The last positive mDNS sighting is now tracked separately from the last poll, so a single missed poll no longer clears it; a site that is genuinely gone still reads as away within the existing ~90s window.
+- **WireGuard Tray State Stale After Remote Removal**: The `wireguard_remove` directory command cleared the agent's VPN-active flag but, unlike `wireguard_apply`, never pushed an immediate tray status update — so the desktop tray could show a stale "VPN active" state for up to 60s after a directory-initiated tunnel removal.
+
 ## [3.36.21] - 2026-08-30
 
 ### theta-directory v2.36.16 & theta-agent v2.21.6
