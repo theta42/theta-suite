@@ -1,3 +1,8 @@
+## [3.36.29] - 2026-09-01
+
+### theta-agent v2.21.9
+- **`DESIGN.md` §5 Corrected for v2.21.8**: The secrets-engine design doc still described only the WS-command trigger and a rotation/invalidation event that was never actually built separately from it. Updated to describe both real triggers (signed command, connect-time pull) and the backup/PEM-validation safety behavior. No code change.
+
 ## [3.36.28] - 2026-09-01
 
 ### theta-agent v2.21.8
