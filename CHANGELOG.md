@@ -1,3 +1,12 @@
+## [3.36.28] - 2026-09-01
+
+### theta-agent v2.21.8
+- **Agent-Pulled Configuration: Connect-Time Secrets Pull**: The agent now renders its configured secret templates on every successful connect, not only on an operator's signed `render_secrets` command — a target that drifted while offline self-heals on reconnect. Gated by the existing `secrets` capability.
+- **Secret Render Backup + PEM Validation**: A render backs up the file it's replacing to `<target>.bak` first, and rendered content that looks like PEM must actually decode as non-empty PEM or the render is rejected (old file kept, reload skipped) — closing the case where a template referencing a not-yet-existing secret path could silently overwrite a live cert with an empty file.
+
+### theta-directory (sso-manager) v2.36.22
+- **"Agent-Pulled Configuration" Doc Corrected**: `docs/resources-reimagined.md` rewritten to describe what theta-agent v2.21.8 now builds vs. what's still explicitly out of scope (generic config types, a true independent poll loop, automatic rollback). No code change.
+
 ## [3.36.27] - 2026-09-01
 
 ### theta-directory (sso-manager) v2.36.21
