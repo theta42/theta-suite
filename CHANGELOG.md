@@ -1,3 +1,11 @@
+## [3.36.24] - 2026-09-01
+
+### theta-directory (sso-manager) v2.36.18
+- **Active Sessions Now Actually Reachable for Proxmox Guests**: The v2.36.17 driver-priority fix didn't, on its own, expose the Directory's existing "logged-in sessions" table for a Proxmox-guest host — it lived in a code path the guest-host branch of the Status-tab dispatcher never called, regardless of driver. Fixed so any host with a bound agent shows its sessions, guest or not.
+- **Added — Fleet-Level Status Summary**: A healthy/warning/critical/unknown host count now shows above the Directory tree, always visible.
+- **Added — "Guessed" Subtype Badge**: A resource classified by a scan (`nmap`/`unifi`) rather than confirmed by an operator now shows a "Guessed" badge, in the tree and on its own detail card.
+- **Fixed**: `nodejs/package.json` version drift from the v2.36.17 release.
+
 ## [3.36.23] - 2026-09-01
 
 ### theta-directory (sso-manager) v2.36.17
