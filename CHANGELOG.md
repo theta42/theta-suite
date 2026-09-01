@@ -1,3 +1,8 @@
+## [3.36.27] - 2026-09-01
+
+### theta-directory (sso-manager) v2.36.21
+- **`directory.ejs` Decomposition, First Slice**: Extracted the two most self-contained clusters out of the single ~5,760-line inline `<script>` block — Discovery plugin admin + merge and Mesh/WireGuard site & exit management — into their own files, loaded as ordinary `<script src>` tags. No behavior change. The view-integrity safety check (which exists because a broken script block on this exact page once killed it silently for three releases) now covers external script files too, not just each view's own inline source.
+
 ## [3.36.26] - 2026-09-01
 
 ### theta-directory (sso-manager) v2.36.20
