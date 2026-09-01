@@ -1,3 +1,9 @@
+## [3.36.25] - 2026-09-01
+
+### theta-directory (sso-manager) v2.36.19
+- **Access Column Collapsed to the Exceptions**: The Directory tree used to show the same "N groups · M inherited" badge pair on every row that inherits access from its site — accurate, and pure noise on an estate of any size. A resource with a direct grant of its own still shows the full badges; inherited-only collapses to one neutral marker.
+- **Added — Live Facts From Proxmox-Guest Children**: The Status tab's meshed facts card now fetches live cpu/memory/disk data for a Proxmox-guest child with no other live source, bounded to 5 per host and run in parallel — closing the v1 scope boundary from the previous release.
+
 ## [3.36.24] - 2026-09-01
 
 ### theta-directory (sso-manager) v2.36.18
