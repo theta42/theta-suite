@@ -1,3 +1,8 @@
+## [3.36.31] - 2026-09-01
+
+### theta-directory (sso-manager) v2.36.24
+- **v2.36.23's Premise Was Wrong — Node 22.x Restored to the PR Test Matrix**: v2.36.23 dropped 22.x on the false claim that only the Docker path (`node:20-alpine`) is ever deployed to production. `install.sh`'s bare-metal path installs Node 22.x and is a second real deployment target. Matrix restored to `[20.x, 22.x]`; only 18.x, which has no deployment path at all, stays dropped.
+
 ## [3.36.30] - 2026-09-01
 
 ### theta-directory (sso-manager) v2.36.23
