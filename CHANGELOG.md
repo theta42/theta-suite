@@ -1,3 +1,8 @@
+## [3.36.30] - 2026-09-01
+
+### theta-directory (sso-manager) v2.36.23
+- **PR Test Matrix Trimmed to Node 20.x**: Deployment is scripted and always builds `node:20-alpine` — no other Node version is ever what actually runs in production. Dropped 18.x/22.x from `pr-tests.yml`'s matrix, cutting exposure to environment-timing flakes on every PR. Was blocked all session on a missing `workflow` OAuth scope; applied once granted. Branch protection's required-status-checks list on that repo's `master` updated to match.
+
 ## [3.36.29] - 2026-09-01
 
 ### theta-agent v2.21.9
