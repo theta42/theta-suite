@@ -1,3 +1,8 @@
+## [3.36.33] - 2026-09-02
+
+### Fixed
+- **setup.sh Now Updates on First Run After `git pull`**: Master pin `THETA_SUITE_VERSION` in `.env` was read before it was synced to the new checkout, so `setup.sh` after `v3.36.32` (`theta-directory v2.36.25`) built the old pinned submodules (`v2.36.24`) and required a second run to catch up - exactly the "newer version available: v2.36.25 running v2.36.24" banner on `suite.vm42.us`. `setup.sh:492` now syncs `THETA_SUITE_VERSION` to `git describe` before choosing the pinned gitlinks, so one `./setup.sh` moves both the suite and all submodules forward.
+
 ## [3.36.32] - 2026-09-02
 
 ### theta-directory (sso-manager) v2.36.25

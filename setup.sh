@@ -496,6 +496,19 @@ if [[ "${SKIP_SUBMODULE_UPDATE:-0}" != "1" ]]; then
 		# release tag. Newest-tag behavior only when the pin is absent. This stops
 		# a plain `./setup.sh` on a pinned master from silently drifting every
 		# component past the version the operator locked the deployment to.
+		#
+		# Sync the pin to the current checkout first: after a self-update (or a
+		# manual `git pull` / `git checkout vX.Y.Z`) the checkout's tag is newer
+		# than the stale value still in .env. Without this a first run after an
+		# update would build the old pinned submodules and require a second run
+		# to catch up (the exact "newer version available: v2.36.25 running
+		# v2.36.24" failure on suite.vm42.us after v3.36.32).
+		CURRENT_SUITE_VER="$(git describe --tags 2>/dev/null || echo unknown)"
+		if [[ -n "$CURRENT_SUITE_VER" && "$CURRENT_SUITE_VER" != "unknown" ]]; then
+			if [[ "$(env_get THETA_SUITE_VERSION)" != "$CURRENT_SUITE_VER" ]]; then
+				env_upsert THETA_SUITE_VERSION "$CURRENT_SUITE_VER"
+			fi
+		fi
 		MASTER_PIN_VER="$(env_get THETA_SUITE_VERSION)"
 		if [[ -n "$MASTER_PIN_VER" && "$MASTER_PIN_VER" != "unknown" ]] && git rev-parse --verify -q "refs/tags/${MASTER_PIN_VER}" >/dev/null 2>&1; then
 			info "Master pinned to ${MASTER_PIN_VER} — advancing submodules to that tag's gitlinks."
