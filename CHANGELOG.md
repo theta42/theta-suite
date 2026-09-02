@@ -1,3 +1,8 @@
+## [3.36.32] - 2026-09-02
+
+### theta-directory (sso-manager) v2.36.25
+- **Agent Site Hint Now Handles Hyphen/Underscore Mismatch**: `utils/agent_site.js:resolveSiteHint` normalized `-`↔`_` and `site_` prefix so `site-718it` (hyphen, `SITE_SLUG` / mDNS) and `site_718it` (underscore, `Resource` slug) resolve interchangeably. Fixes `4001 Site not found: site-718it` that blocked fresh agent enrollments on `suite.vm42.us` (`william-HP-ENVY` + master `theta-suite-718it`) and required `location: 718it` workaround.
+
 ## [3.36.31] - 2026-09-01
 
 ### theta-directory (sso-manager) v2.36.24
