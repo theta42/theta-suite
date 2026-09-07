@@ -12,7 +12,7 @@ Theta Suite composes core applications around a shared [OpenBao](https://openbao
 
 All applications load their secrets from OpenBao at boot; `./setup.sh` automates the first-run glue so components discover each other and the secrets engine automatically.
 
-**Site:** [https://theta42.github.io/theta-suite/](https://theta42.github.io/theta-suite/)
+**Site:** [https://theta42.github.io/theta-suite/](https://theta42.github.io/theta-suite/) • **Community & Chronicles:** [https://community.theta42.com/](https://community.theta42.com/)
 
 ## Screenshots
 
@@ -523,3 +523,11 @@ See [CHANGELOG.md](CHANGELOG.md) for what changed in each theta-suite release
 [proxy](https://github.com/theta42/proxy/blob/master/CHANGELOG.md),
 [sso-manager-node](https://github.com/theta42/sso-manager-node/blob/master/CHANGELOG.md)
 — for what changed inside the apps themselves).
+
+---
+
+## Community & Sovereign Ecosystem
+
+Theta Suite is part of the sovereign open-source ecosystem by [Theta42](https://theta42.com).
+- **Community Hub & Chronicle:** [community.theta42.com](https://community.theta42.com/) — Explore 50+ engineering milestones, PR announcements, and sovereign infrastructure releases.
+- **Inquiries & Architecture Support:** [info@theta42.com](mailto:info@theta42.com)
