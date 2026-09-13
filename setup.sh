@@ -675,6 +675,17 @@ module.exports = {
 		authorizationEndpoint: $(js_str "https://${CFG_SSO_HOST}/oauth/authorize"),
 		tokenEndpoint: 'http://sso-manager:3001/oauth/token',
 		userinfoEndpoint: 'http://sso-manager:3001/oauth/userinfo',
+		// Set explicitly, and to the INTERNAL address, for the same reason the
+		// two above are: the proxy reaches the SSO over the docker network, and
+		// the public HTTPS host may not resolve from inside the container (or
+		// hairpins back through the proxy itself). @simpleworkjs/oidc-client
+		// v1.1.0+ verifies ID token signatures against this key set; without it
+		// the client would try to discover the URL from the public `issuer`
+		// above, fail, and fall back to userinfo-only identity with a warning.
+		//
+		// The `issuer` stays the public host on purpose -- it is what the SSO
+		// puts in the token's `iss` claim, and that is what gets compared.
+		jwksUri: 'http://sso-manager:3001/.well-known/jwks.json',
 		endSessionEndpoint: $(js_str "https://${CFG_SSO_HOST}/oauth/logout"),
 		clientId: $(js_str "$CFG_CLIENT_ID"),
 		clientSecret: $(js_str "$CFG_CLIENT_SECRET"),

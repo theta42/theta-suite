@@ -1085,6 +1085,12 @@ module.exports = {
 \t\tauthorizationEndpoint: ${JSON.stringify(`https://${SSO_HOST}/oauth/authorize`)},
 \t\ttokenEndpoint: 'http://127.0.0.1:3001/oauth/token',
 \t\tuserinfoEndpoint: 'http://127.0.0.1:3001/oauth/userinfo',
+\t\t// Loopback for the same reason as the two above. @simpleworkjs/oidc-client v1.1.0+
+\t\t// verifies ID token signatures against this key set; without it the
+\t\t// client tries to discover the URL from the public issuer and falls
+\t\t// back to userinfo-only identity when that is not reachable here.
+\t\t// The issuer stays the public host: it is what the SSO puts in iss.
+\t\tjwksUri: 'http://127.0.0.1:3001/.well-known/jwks.json',
 \t\tclientId: ${JSON.stringify(oidc.id)},
 \t\tclientSecret: ${JSON.stringify(oidc.secret)},
 \t\tredirectUri: ${JSON.stringify(JUMP_REDIRECT_URI)},
