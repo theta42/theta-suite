@@ -19,7 +19,7 @@ product decision, documented, not silently patched).
 
 | ID | Component | Finding | Fix | Status |
 |----|-----------|---------|-----|--------|
-| H1 | sso | Join key + `?hostname=` rotates **any** agent's token (takeover: `api_agent.js:544-586`) | rotation requires `?prev_token=` matching the agent's current credential (contract G-2); otherwise reject 4001 on name collision; agent persists + sends `prev_auth_token` (`ClearEnrollment` preserves it) | fixed |
+| H1 | sso | Join key + `?hostname=` rotates **any** agent's token (takeover: `api_agent.js:544-586`) | rotation requires `?prev_token=` matching the agent's current credential (contract G-2); otherwise reject 4001 on name collision; agent persists + sends `prev_auth_token` (`ClearEnrollment` preserves it) | fixed — **server half only until theta-agent v2.22.0**; see A1 |
 | H2 | sso | `/api/v1/ldap/search` runs arbitrary `base_dn`/`scope`/`filter` under the **admin** bind | pin base to user/group/admin bases, scope ∈ {base,sub}, force-drop `userPassword`/`sshPrivateKey`-class attrs from any request's `attributes` | fixed |
 | H3 | sso | slapd seed ACL `access to * by * read` = anonymous whole-directory read | `by * none`, explicit read for the service account (`cn=ldapclient`), keep `by anonymous auth` on userPassword (SSSD binds as the user) | fixed |
 | H4 | sso | Logout dead branch (`/api/auth` mounted without `middleware.auth` → `req.user` never set); `AuthToken` has no TTL; deactivation doesn't kill live sessions | logout invalidates the presented `auth-token` directly; `AuthToken._ttl` 30d; per-request check rejects deactivated/locked users | fixed |
@@ -97,6 +97,36 @@ product decision, documented, not silently patched).
 | L9 | ldap-client | README claims "sudo via LDAP groups" (never wired); registration prints success on HTTP errors | README corrected to match reality; error check per M33 | fixed |
 | L10 | sso | `addLdapUser` TypeError on empty `givenName`; `User.list` ignores `userNameAttribute` | guard + attribute honored | fixed |
 
+## AGENT INTEGRATION — second pass, 2026-09-12
+
+Source: end-to-end review of theta-agent against its server-side counterpart
+(WS protocol, enrollment, driver path, discovery/telemetry reconciliation,
+mesh/secrets REST, install/staging wiring). Every row below was a live defect at
+review time; none of them were visible to either side's test suite, and
+`initAgentWebSockets` had no tests at all — which is how A1 and A3 shipped.
+
+Fixed in theta-directory v2.37.0, theta-agent v2.22.0, proxy v2.5.4.
+
+| ID | Component | Finding | Fix | Status |
+|----|-----------|---------|-----|--------|
+| A1 | sso | **No agent had received a `config` frame since v2.36.14**: `conf` read in the send closure with no binding in scope → ReferenceError before `ws.send`, swallowed by the enclosing catch. Cost every agent its `agent_id`, home-detect hints, branding, and a join-key host its `auth_token` | `conf` required at module scope; optional payload pieces gathered individually so none can cost an agent its credentials | fixed |
+| A2 | theta-agent | **Contract G-2's agent half never existed**: no `prev_token` anywhere, `ClearEnrollment` blanked `auth_token` outright → `reset-enrollment` and the tray's re-enroll were one-way doors (4001 forever, recoverable only by deleting the agent row by hand). With A1 this locked out every fresh install | token preserved as `prev_auth_token`, presented in an `X-Theta-Prev-Token` header, cleared once spent; server reads header then query | fixed |
+| A3 | theta-agent | **Every command response was discarded**: `sendResponse` wrote a bare `{status, message}` with no `type`; the server drops typeless frames silently. `lastResponse` permanently null, no command output ever reached the UI, server's `case 'response'` unreachable | all responses wrapped in the `{type, payload}` envelope (PROTOCOL.md 3.4); server also accepts the legacy form so an un-upgraded fleet works | fixed |
+| A4 | sso | **`ThetaAgentDriver` could not dispatch anything**: passed `agent.id` where `sendCommand` expects the row (`Agent "undefined" is not connected`), and `isHighRisk` as a payload key rather than the signing argument → unsigned commands the agent refuses | row passed, `isHighRisk` in the argument position; the test that asserted the wrong contract corrected | fixed |
+| A5 | sso | `HIGH_RISK_COMMANDS` out of sync with the agent's `verifySignature` gates: `desktop_control` (+4 aliases), `wireguard_apply/remove`, `register/unregister_service`, `zpool_scrub` unreachable via REST | list synced; PROTOCOL.md 4.2 notes that the two copies drifting is silent in both directions | fixed |
+| A6 | sso | `handleDiscovery`'s field whitelist dropped `mac_address`, so the MAC tier of host adoption never fired, host slugs always fell back to hostname, and no host row ever recorded a MAC | field kept; regression test covers the path from the wire to the directory | fixed |
+| A7 | sso | No server-side WS liveness check: a half-open socket kept `readyState` OPEN, so `isConnected()` stayed true and commands were written into a socket nobody read instead of being forwarded to the node holding the agent | 30s ping, terminate on a missed pong (inside the agent's own 90s deadline) | fixed |
+| A8 | sso + theta-agent | PROTOCOL.md 3.5's promise that a service removed from `agent.yml` loses its child resource was never implemented; `services` was `omitempty`, so "none left" and "older agent" were indistinguishable | agent always sends the list; directory prunes what is no longer reported, keeping anything another source also sees (it only loses the `theta-agent` source) | fixed |
+| A9 | sso | `iam_apply` had no caller at all — the agent's entire IAM engine was unreachable | `GET`/`POST /api/agent/nodes/:id/iam`; `allowed_login_groups` derived from the group model, `sudo_rules` deliberately empty (would be `ALL/ALL` — H12's landmine; scoped sudo is D5) | fixed |
+| A10 | theta-agent | A pushed IAM policy could lock root out: deny-all `access.conf` with no local escape | `+:root:ALL` written first, whatever the directory sent | fixed |
+| A11 | theta-agent | Tray `reinit` bypassed the guard `reset-enrollment` has, leaving a host with no credential at all | same guard applied to the tray path | fixed |
+| A12 | root + sso | The `install.sh` the Directory served had drifted to 283 lines against the submodule's 721: no WireGuard tools (agent enrols into the mesh, gets a peer and a config, then fails at `wg-quick up`), no stray-agent cleanup, no tray | `setup.sh` stages the submodule's file; the baked fallback re-synced | fixed |
+| A13 | root + theta-agent | `setup.sh` installed `releases/latest` while staging the pinned tag, and `install.sh` fetched from GitHub rather than the directory's staged+verified artifacts → version skew, and offline install impossible despite staging | setup.sh installs the pinned tag; install.sh prefers the directory (verifying against its `SHA256SUMS`), GitHub as fallback | fixed |
+| A14 | sso | `zfs_pool`/`wireguard` resources reported defaults for telemetry keys that never existed on the wire — every pool read "ONLINE" whatever it was doing | driver reads `zfs_health` and the agent's new `wireguard` block, reporting `null` + `reported:false` when there is no reading | fixed |
+| A15 | sso | Two disagreeing mesh push paths: the admin push omitted the `siteId`/`exitSiteId` the other two send | one path (`meshClients.pushConfigToAgent`), 409 when the agent is not connected | fixed |
+| A16 | theta-agent | Capabilities reported `shutdown: true` unconditionally though it is gated by `reboot`, and never reported `storage` (the `zpool_scrub` gate) | both reported honestly | fixed |
+| A17 | proxy | No `proxy_read_timeout`: upgraded connections inherited nginx's 60s default, against the agent's 60s pong/heartbeat cadence | 600s read/send; applies to all upstreams since nginx takes no variable here | fixed |
+
 ## Design gaps — documented, deliberately NOT patched
 
 | ID | Area | Why deferred |
@@ -114,8 +144,11 @@ product decision, documented, not silently patched).
   where payload excludes `signature`; both `sso-manager-node/nodejs/utils/agent_manager.js` and
   `theta-agent/websocket.go verifySignature` implement identically.
 - **G-2 join prev_token**: agent with a wiped enrollment persists `prev_auth_token` and sends it as
-  `?prev_token=` on the join-key WS dial; server rotates **only** on exact match, else rejects
-  (close 4001) when the hostname is already registered.
+  `X-Theta-Prev-Token` (header preferred; `?prev_token=` still accepted) on the join-key WS dial;
+  server rotates **only** on exact match, else rejects (close 4001) when the hostname is already
+  registered. The agent half was **not** built when this contract was frozen — only the server's
+  rejection was — which made re-enrollment impossible rather than merely unauthenticated. Shipped
+  in theta-agent v2.22.0; see A2.
 - **G-3 JUMP_SSH_PORT**: single source is `master.env`/CLI env → setup.sh exports it for the
   bootstrap exec (writes `ssh.listenPort`) **and** for install.sh (writes `app_ssh__listenPort`
   belt-and-braces). App precedence: env override > conf > 2222.
