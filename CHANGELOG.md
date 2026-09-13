@@ -1,3 +1,25 @@
+## [3.39.0] - 2026-09-13
+
+SSO ID tokens are now verified. Closing the loop on the OIDC review: the
+directory started publishing a JWKS in v3.38.0, and the two relying parties in
+the suite now check signatures against it instead of treating the flow as opaque.
+
+### proxy v2.6.0 / jump-host v3.8.0
+- **ID token signatures are verified.** `@simpleworkjs/oidc-client` 1.0.0 → 1.1.1: the callback now verifies the ID token against the SSO's JWKS (signature, `iss`, `aud`, `exp`) and cross-checks its subject against the userinfo response. Both apps previously read identity from userinfo alone — sound, since the access token is exchanged server-side over TLS, but establishing nothing about *who asserted* it. The library's own comment gave the reason: "The SSO publishes no jwks_uri."
+- **`setup.sh` and `bootstrap/bootstrap.js` now write `oidc.jwksUri`**, pointing at the SSO over the **internal** address (`http://sso-manager:3001/…` for the proxy, loopback for the jump host) — for exactly the reason `tokenEndpoint` and `userinfoEndpoint` already do: the public HTTPS host may not resolve from inside the container, and can hairpin back through the proxy itself. `issuer` deliberately stays the public host, because that is what the SSO puts in the token's `iss` claim and what verification compares against.
+
+  An existing deployment that has not re-run `setup.sh` has no `jwksUri` and keeps working exactly as before, logging one warning that signatures are not verified.
+
+### theta-directory v2.38.1
+- `@simpleworkjs/bao-conf` 1.0.1 → 1.0.2: an unset `VAULT_TOKEN` is reported once per process rather than once per secret read. The multi-site E2E logs carried 108 copies of that message per run, in passing runs as much as failing ones.
+
+### Upstream packages
+- **`@simpleworkjs/oidc-client` v1.1.0 → v1.1.1** — 1.1.0 *threw* when a configured `issuer` had an unreadable discovery document, which would have broken every login on a deployment shaped like this one (public issuer, internal endpoints). A failed discovery now means "we never established this provider can be verified against" and degrades to userinfo-only with one warning; a JWKS that is known and then unusable stays fatal. Caught while preparing this upgrade, before it reached anything.
+- **`@simpleworkjs/bao-conf` v1.0.2** — the log-flood fix above.
+
+### Dependabot
+- Nothing open across any repo in the suite: the twelve advisories cleared in v3.37.2 remain the last of them, with no dismissed-but-unfixed alerts. Worth noting separately that `simpleworkjs/conf` has Dependabot alerts **disabled**, so nothing there would be reported.
+
 ## [3.38.0] - 2026-09-13
 
 A review of the OIDC surface: the UI for setting a service up and managing it
