@@ -1,3 +1,30 @@
+## [3.37.0] - 2026-09-13
+
+End-to-end review of `theta-agent`'s integration with the Directory. Seventeen
+defects (`gaps.md` A1-A17), none of which either side's test suite could see:
+`initAgentWebSockets` had no tests at all, and the agent's own tests asserted the
+broken contracts. Two of them made the agent unusable out of the box.
+
+### theta-directory (sso-manager) v2.37.0
+- **No agent had received a `config` frame since v2.36.14** (A1): the frame is assembled in an async IIFE and v2.36.14 added a `conf.name` read to it, in a closure where `conf` was not in scope. The ReferenceError threw before `ws.send` and was swallowed by the enclosing catch, costing every agent its `agent_id`, home-detect hints and branding — and costing a join-key host the `auth_token` it must persist. Combined with A2 that locked out every fresh install permanently: enrol once, learn nothing, re-dial with the join key, collide with your own hostname, `4001` forever.
+- **`ThetaAgentDriver` could not dispatch a single command** (A4): all four call sites passed `agent.id` where `sendCommand` expects the row, so every reboot, service action, desktop action and scrub threw `Agent "undefined" is not connected` before reaching the wire. Two also passed `isHighRisk` as a payload key rather than the signing argument, sending unsigned commands the agent refuses.
+- `HIGH_RISK_COMMANDS` synced with the agent's signature gates (A5); `mac_address` no longer dropped from discovery, so the MAC tier of host adoption works (A6); a 30s server-side ping so a half-open socket stops reading as connected (A7); telemetry prunes service children the agent no longer reports (A8); `zfs_pool` resources stop reporting a hardcoded `ONLINE` (A14); the two disagreeing mesh push paths unified (A15).
+- **Node IAM has a caller** (A9): `GET`/`POST /api/agent/nodes/:id/iam`. `iam_apply` sat in the high-risk list with nothing ever sending it. Derives `allowed_login_groups` from the group model only — `sudo_rules` stays empty, because the one rule derivable from "admin on this host" is `ALL/ALL`, the landmine H12 removed from the LDAP side (scoped sudo remains design gap D5).
+- The `install.sh` served from the Install Agent page re-synced from the submodule after drifting to 283 lines against its 721 (A12).
+
+### theta-agent v2.22.0
+- **Every command response was discarded** (A3): `sendResponse` wrote a bare `{status, message}` with no `type`, and the Directory drops typeless frames silently — so the fleet view's "last response" was permanently null and no command output ever reached the UI. All five handlers now send the `{type, payload}` envelope PROTOCOL.md §3.4 always specified.
+- **Contract G-2's agent half never existed** (A2): no `prev_token` anywhere in the codebase, and `ClearEnrollment` blanked `auth_token` outright — so `reset-enrollment` and the tray's re-enroll were one-way doors. The superseded token is kept as `prev_auth_token` and presented in an `X-Theta-Prev-Token` header.
+- **A pushed IAM policy could lock root out of a host** (A10): the deny-all `access.conf` the agent writes had no local escape. `+:root:ALL` is now always first.
+- Tray `reinit` gained the guard the CLI already had (A11); `shutdown`/`storage` capabilities reported honestly (A16); `uptime_seconds` and `wireguard` state added to telemetry, both of which the Directory's driver already read (A14); `services` always on the wire so pruning is safe (A8); `install.sh` prefers the Directory's staged, `SHA256SUMS`-verified binary over GitHub `latest` (A13). PROTOCOL.md → v1.4.0.
+
+### proxy v2.5.4
+- **Long-lived WebSockets were severed at nginx's 60s default** (A17): no `proxy_read_timeout` was set, and the agent's pong and `heartbeat_ack` both arrive at 60s — so an idle agent socket sat exactly on the deadline and was cut at random, looking like an agent reconnecting every minute for no reason. Now 600s.
+
+### Fixed (root)
+- **`setup.sh` staged a stale `install.sh` and installed an unpinned binary**: it copied the Directory's drifted fork rather than the submodule's maintained file (A12), and installed `releases/latest` while staging the artifacts for the pinned tag — so a host landed on a different build than the Directory serves, and its first `theta-agent update` moved it backwards (A13). Both now come from the pin.
+- **`gaps.md`**: new A1-A17 section; H1 and contract G-2 corrected — both were recorded as `fixed` when only the server half had ever shipped, which is what left re-enrollment impossible rather than merely authenticated.
+
 ## [3.36.33] - 2026-09-02
 
 ### Fixed

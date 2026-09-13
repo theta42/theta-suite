@@ -1455,8 +1455,19 @@ env_upsert PROXY_GIT_COMMIT "$PROXY_GIT_COMMIT"
 # /resources/theta-agent/<artifact> and verifies it against SHA256SUMS, so
 # every host must be able to get every artifact from this directory.
 mkdir -p "$CONFIG_DIR/resources/theta-agent"
-cp -f sso-manager-node/nodejs/public/resources/theta-agent/install.sh \
-      "$CONFIG_DIR/resources/theta-agent/install.sh" 2>/dev/null || true
+# install.sh comes from the theta-agent submodule, which is the file that is
+# actually maintained. The copy under sso-manager-node/nodejs/public/ is only the
+# fallback baked into the image for a directory that has never run setup.sh, and
+# it had drifted to less than half the length of the real one: no WireGuard
+# tools install (so an agent enrolled into the mesh, got a peer and a config,
+# then failed at `wg-quick up`), no stray-agent cleanup, no tray install. Staging
+# the stale copy meant the Install Agent page handed out the broken installer.
+if [[ -f theta-agent/install.sh ]]; then
+	cp -f theta-agent/install.sh "$CONFIG_DIR/resources/theta-agent/install.sh"
+else
+	cp -f sso-manager-node/nodejs/public/resources/theta-agent/install.sh \
+	      "$CONFIG_DIR/resources/theta-agent/install.sh" 2>/dev/null || true
+fi
 AGENT_TAG="$(git -C theta-agent describe --tags --exact-match HEAD 2>/dev/null || git -C theta-agent describe --tags 2>/dev/null || true)"
 if [[ -n "$AGENT_TAG" ]]; then
 	RELEASE_URL="https://github.com/theta42/theta-agent/releases/download/${AGENT_TAG}"
@@ -2061,9 +2072,22 @@ if [[ "$CFG_THETA_AGENT_ENABLE" == "1" ]]; then
 		# theta-agent main.go websocket.go config.go` omitted
 		# executor.go/telemetry.go, failed to compile, and was silently
 		# skipped, so the agent was never installed.
-		AGENT_BIN_URL="https://github.com/theta42/theta-agent/releases/latest/download/theta-agent-linux-amd64"
+		# THE PINNED version, not "latest". Step 6 stages the artifacts for the
+		# submodule's tag and serves them with a SHA256SUMS the agent's own
+		# `theta-agent update` verifies against -- so installing "latest" here
+		# put the host on a different build than the directory it updates from,
+		# and the host's next self-update would move it BACKWARDS to the pinned
+		# version. One suite, one agent version. "latest" stays as the fallback
+		# for a checkout with no reachable tag (a shallow clone, a dirty tree).
+		if [[ -n "${AGENT_TAG:-}" ]]; then
+			AGENT_BIN_URL="https://github.com/theta42/theta-agent/releases/download/${AGENT_TAG}/theta-agent-linux-amd64"
+			AGENT_BIN_DESC="${AGENT_TAG}"
+		else
+			AGENT_BIN_URL="https://github.com/theta42/theta-agent/releases/latest/download/theta-agent-linux-amd64"
+			AGENT_BIN_DESC="latest (no pinned tag resolved)"
+		fi
 		AGENT_BIN_TMP="$(mktemp)"
-		info "  Downloading latest theta-agent-linux-amd64 release binary..."
+		info "  Downloading theta-agent-linux-amd64 ${AGENT_BIN_DESC}..."
 		if ! curl -fsSL -o "$AGENT_BIN_TMP" "$AGENT_BIN_URL" || [[ ! -s "$AGENT_BIN_TMP" ]]; then
 			rm -f "$AGENT_BIN_TMP"
 			warn "Could not download theta-agent-linux-amd64 from $AGENT_BIN_URL. Skipping theta-agent installation."
