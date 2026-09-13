@@ -1,3 +1,26 @@
+## [3.38.0] - 2026-09-13
+
+A review of the OIDC surface: the UI for setting a service up and managing it
+afterwards, and — underneath it — three defects that made the management
+controls dishonest.
+
+### theta-directory (sso-manager) v2.38.0
+
+**Fixed**
+- **Every OAuth client edit was silently discarded.** `OAuthClient.update()` mutated `r.metadata` in place and handed the *same object reference* back to the ORM, which compares what it is given against what the row holds, saw no difference, and dropped the write. Editing redirect URIs, scopes, allowed groups or lifetimes returned 200 and changed nothing. Two consequences stand out: **disabling a client did nothing**, and **rotating a secret left the old secret working and the new one dead** — the operator saves the new value, their app stops authenticating, and the leaked secret carries on. In the incident the rotate button exists for, it actively misled. Each was proved against the pre-fix code before being fixed.
+- **"OIDC Client" produced a client that could never work.** The subtype an operator setting up a relying party reaches for first was shown the credentials panel, but only `subType === 'oauth'` minted credentials — so it saved its settings, offered a Rotate Secret button for a secret that did not exist, and produced `Unknown client_id` at the token endpoint. Silently. Both subtypes are real clients now; `saml-sp` is not one (SAML is unimplemented) and no longer claims to be.
+- The Overview **OAuth** tile always read 0 — it counted a `kind` that stopped existing when clients became services, and they were being counted as plain services instead.
+
+**Added**
+- **Connection details in the console.** The client_id appeared *nowhere*, and neither did the issuer or any endpoint, so setting up a service meant digging the id out of a URL. The client's edit screen now shows the client ID, discovery URL and every endpoint, copyable, read from the provider's own discovery document; creation hands over both halves of the credential pair.
+- **RS256 ID tokens and a published JWKS.** Tokens were HS256 under a single global secret shared by every client, so every client validated with a key it could also sign with — any one of them could mint a token for another. The key is stored in OpenBao and replicated across sites like the agent signing key, so a promotion does not invalidate every token in the cluster. HS256 remains a logged fallback; refusing to sign would fail every login on the deployment.
+- **Public clients** (SPA/mobile/CLI — no secret, PKCE required), **token revocation** (RFC 7009 for a client's own token, plus an operator sweep — rotating a secret never ended an existing session), and **enable/disable and public-client switches** backing model flags that already existed and were unreachable.
+
+**Docs** — `docs/oauth.md`, `docs/concepts-oauth-apps.md` and `API.md` all updated: token signing and the JWKS, public clients, revocation, disabling, and the client subtypes.
+
+### Noted for follow-up
+- `@simpleworkjs/oidc-client` skips ID-token signature verification entirely, and its own comment gives the reason: *"The SSO publishes no jwks_uri, so we do not verify ID-token signatures."* It reads identity from the userinfo endpoint instead — an extra round trip per login, and no signature check. That constraint is now gone; the library can verify properly, which is a change in its own repo.
+
 ## [3.37.2] - 2026-09-13
 
 Security housekeeping, and one defect found underneath it.
