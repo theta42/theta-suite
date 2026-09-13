@@ -1,3 +1,20 @@
+## [3.37.1] - 2026-09-13
+
+Follow-ups from the same agent-integration review: the cause of the multi-site
+E2E's long-standing intermittent failure, and two smaller defects found while
+confirming it.
+
+### theta-directory (sso-manager) v2.37.1
+- **An unreachable mesh address cost every replication push 8 seconds.** The resync push prefers a spoke's mesh address (`10.<serverId>.0.2`) and falls back to its public endpoint, and the request timeout has to be generous because the far end does a full export + import before answering. A timeout is not a reachability test, so a tunnel that was down — or had never come up, or a deployment with no mesh at all — cost every catalog write the full 8s **per spoke** before the fallback was tried. The mesh address now gets a 1s TCP connect probe and is skipped when nothing answers; the request timeout is untouched, because shortening that would abort a working mesh push mid-import and repeat the whole import over the public endpoint. Visible as "Sync now" hanging 8s per spoke at a site whose tunnel had dropped, and as the multi-site E2E's post-promotion replication assertion failing about half the time — its push landed a second or two the wrong side of a 15s budget. E2E wall time dropped ~9s alongside the fix.
+- **A flaky test of our own making.** The agent WS handler tests added in v2.37.0 waited a fixed 60ms for an async connect path, tight enough that it was intermittently failing CI **on unrelated PRs** (including dependabot's). They now wait on the actual condition with a deadline.
+
+### theta-agent v2.22.1
+- **A zero reading was indistinguishable from no reading.** Every numeric `ServiceMetric` field carried `omitempty`, so a legitimate zero was dropped from the telemetry frame and the Directory rendered a blank instead of a value. `cpu_usage_percent` is the sharpest case: the protocol defines `-1` as the "no sample yet" sentinel *precisely* so that `0` can mean zero, and `omitempty` kept the `-1` while dropping the `0`. An idle service reported no CPU figure at all; a service that had never restarted reported no restart count.
+- `gofmt` on the five files that had never been formatted. `gofmt -l .` is clean for the first time.
+
+### Not changed (verified, not assumed)
+- An earlier note in this review claimed unhandled WebSocket upgrades leaked sockets. They do not: engine.io's `destroyUpgrade` already ends them after 1s. The proposed fix was written, measured against the current behaviour, found to change nothing, and dropped.
+
 ## [3.37.0] - 2026-09-13
 
 End-to-end review of `theta-agent`'s integration with the Directory. Seventeen

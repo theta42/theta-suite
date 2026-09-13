@@ -127,6 +127,17 @@ Fixed in theta-directory v2.37.0, theta-agent v2.22.0, proxy v2.5.4.
 | A16 | theta-agent | Capabilities reported `shutdown: true` unconditionally though it is gated by `reboot`, and never reported `storage` (the `zpool_scrub` gate) | both reported honestly | fixed |
 | A17 | proxy | No `proxy_read_timeout`: upgraded connections inherited nginx's 60s default, against the agent's 60s pong/heartbeat cadence | 600s read/send; applies to all upstreams since nginx takes no variable here | fixed |
 
+Follow-ups, found while confirming the multi-site E2E failure that kept blocking
+these merges was not caused by them. Fixed in theta-directory v2.37.1 and
+theta-agent v2.22.1.
+
+| ID | Component | Finding | Fix | Status |
+|----|-----------|---------|-----|--------|
+| A18 | sso | **The multi-site E2E's intermittent failure was a real defect**, not test flake: the resync push tries a spoke's mesh address first and the request timeout must be generous (the far end does a full export+import before answering), so an unreachable mesh cost the FULL 8s per spoke, per write, before the public endpoint was tried. "Sync now" hung 8s per spoke at any site whose tunnel had dropped | 1s TCP connect probe on the mesh address only (`utils/tcp_probe.js`); request timeout deliberately unchanged — shortening it would abort a working mesh push mid-import and repeat the import over the public endpoint | fixed |
+| A19 | sso | The agent WS handler tests added in v2.37.0 waited a fixed 60ms on an async connect path, and were intermittently failing CI **on unrelated PRs** including dependabot's | wait on the condition with a deadline, not on a duration | fixed |
+| A20 | theta-agent | Every numeric `ServiceMetric` field carried `omitempty`, so a zero reading was dropped and the directory rendered a blank. `cpu_usage_percent` defines `-1` as its "no sample" sentinel so that `0` can mean zero — `omitempty` kept the `-1` and dropped the `0` | the six numeric fields are always sent; the strings keep `omitempty`, where absent genuinely means "not applicable to this subtype" | fixed |
+| A21 | — | **Withdrawn.** An earlier note here claimed unhandled WebSocket upgrades leaked sockets. They do not — engine.io's `destroyUpgrade` ends them after 1s. The fix was written, measured against current behaviour, found to change nothing, and dropped | none needed | not a defect |
+
 ## Design gaps — documented, deliberately NOT patched
 
 | ID | Area | Why deferred |
