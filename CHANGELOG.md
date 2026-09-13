@@ -1,3 +1,22 @@
+## [3.37.2] - 2026-09-13
+
+Security housekeeping, and one defect found underneath it.
+
+### Security — every Dependabot advisory in the suite is now closed
+- **theta-directory** (1 high, 5 moderate): `nodemailer` 9.0.3 → 9.1.1, `qs` 6.15.3 → 6.16.0, `js-yaml` (dev) 3.15.1 → 3.15.2.
+- **proxy** (2 high, 4 moderate): `socket.io-parser` 4.2.6 → 4.2.7, `ip-address` 10.2.0 → 10.7.0, `qs` 6.15.3 → 6.16.0.
+
+All six were Dependabot pull requests that had been sitting open against a master they had drifted from. Each was rebased onto current master and re-verified rather than merged on its original, stale CI run. None required a code change.
+
+Worth recording why `nodemailer`'s had been red since the day it was opened: **not** for anything to do with nodemailer, but because of the fixed-`setTimeout` agent WS handler test introduced in theta-directory v2.37.0 and fixed in v2.37.1. A flaky test of ours had been blocking a security update on a bot's pull request, where nobody was likely to look.
+
+### theta-directory v2.37.2
+- **The fastest possible SSH probe reported no response time at all.** `network_driver.js` mapped its probe result with `responseTimeMs: (probe && probe.responseTimeMs) || null`. A probe that answers in under a millisecond — every SSH service on loopback or a fast LAN — reports `0`, and `0 || null` is `null`, so the best possible reading was indistinguishable from no reading and the UI rendered a blank. This is the same defect as theta-agent v2.22.1's `omitempty` on zero-valued telemetry, in JavaScript form: a falsy-but-valid zero coerced away. It surfaced as a CI failure that hit one matrix leg and passed the other **on the same commit**, depending on whether the runner was quick enough to answer in 0 ms.
+- A test that bound a hardcoded port `22222`, and asserted "offline" against a port `22223` it had never verified was closed, now binds `:0` and reads the port back. Found while chasing the above; it was not what was failing.
+
+### proxy v2.5.5
+- The three dependency bumps above.
+
 ## [3.37.1] - 2026-09-13
 
 Follow-ups from the same agent-integration review: the cause of the multi-site
