@@ -1665,9 +1665,37 @@ info "Running bootstrap (creates/updates the LDAP service account, first admin, 
 # the field blank.
 STACK_HOST_NAME="$(hostname 2>/dev/null || true)"
 STACK_HOST_IP="$(hostname -I 2>/dev/null | awk '{print $1}' || true)"
-_iface="$(ip route show default 2>/dev/null | awk '/default/ {print $5; exit}' || true)"
+# The MAC here MUST be the one theta-agent will report for this same machine,
+# because the directory matches an enrolling agent to an existing host row by
+# MAC first (utils/resource_matcher.js). Disagree, and the master ends up in its
+# own directory TWICE: bootstrap's row carrying the stack's services, and the
+# agent's placeholder carrying the agent and all the telemetry. Worse than a
+# missing MAC, a WRONG one actively blocks the IP fallback, because the
+# MAC-hijack guard refuses to match a candidate that already has an identity of
+# its own.
+#
+# This used to take the default route's interface. theta-agent takes the first
+# non-loopback, non-virtual interface with a hardware address
+# (collectPrimaryMAC, telemetry.go) -- the two coincide on a single-NIC box and
+# diverge on exactly the machines this stack tends to run on: a Proxmox host
+# routing via vmbr0, a server whose default route is not its first NIC, anything
+# with a bridge. Mirror the agent's rule instead, including its interface
+# ordering (by ifindex, which is what Go's net.Interfaces() returns).
 STACK_HOST_MAC=""
-[[ -n "$_iface" ]] && STACK_HOST_MAC="$(cat "/sys/class/net/$_iface/address" 2>/dev/null || true)"
+while read -r _idx _name; do
+	case "$_name" in
+		lo|docker*|br-*|veth*|cni*|flannel*|virbr*|podman*|tun*|tap*|lxcbr*|vnet*) continue ;;
+	esac
+	_addr="$(cat "/sys/class/net/$_name/address" 2>/dev/null || true)"
+	[[ -n "$_addr" && "$_addr" != "00:00:00:00:00:00" ]] || continue
+	STACK_HOST_MAC="$_addr"
+	break
+done < <(
+	for _d in /sys/class/net/*; do
+		[[ -e "$_d/ifindex" ]] || continue
+		printf '%s %s\n' "$(cat "$_d/ifindex" 2>/dev/null || echo 9999)" "$(basename "$_d")"
+	done | sort -n
+)
 STACK_HOST_OS="$( (. /etc/os-release 2>/dev/null && echo "${PRETTY_NAME:-}") || true)"
 STACK_HOST_KERNEL="$(uname -r 2>/dev/null || true)"
 # The compose project name the stack runs under (defaults to the directory

@@ -1,3 +1,28 @@
+## [3.40.0] - 2026-09-14
+
+A look at resource onboarding for a master on a fresh install, which turned up
+one defect: the master can end up in its own directory twice.
+
+### Fixed
+- **A fresh master install could register its own host twice.** The same machine is created from two directions — `bootstrap/bootstrap.js` seeds the stack host (carrying the stack's five services), and then `setup.sh` installs theta-agent on that same machine, which enrols and gets a placeholder host of its own. The agent's first discovery is meant to recognise them as one machine and adopt the seeded row; it matches by MAC first, and the two halves were picking the MAC by **different rules**:
+
+  - `setup.sh` recorded the **default route's** interface;
+  - `theta-agent`'s `collectPrimaryMAC()` (telemetry.go) takes the **first non-virtual** interface, deliberately skipping bridges.
+
+  Those coincide on a simple single-NIC box and diverge on exactly the machines this stack tends to run on: a Proxmox host routing via `vmbr0`, a server whose default route is not its first NIC, anything with a bridge. The result is the master listed twice — bootstrap's row holding the stack's services, the agent's placeholder holding the agent and every telemetry sample.
+
+  A **wrong** MAC is worse than a missing one: `matchByIp` refuses any candidate that already has an identity of its own (the MAC-hijack guard), so a wrong MAC blocks the IP fallback that an absent one would have allowed. Verified by driving the directory's real discovery entry point — a matching MAC, a missing MAC and a moved IP all adopt correctly; a *mismatched* MAC duplicates even when the IP is an exact match.
+
+  `setup.sh` now mirrors theta-agent's rule exactly, including its interface ordering (by ifindex, which is what Go's `net.Interfaces()` returns), so the two agree by construction. Loosening the matcher was the alternative and would have re-opened the hijack that guard exists to stop.
+
+- **`bootstrap.js` corrects a MAC an earlier run seeded wrongly.** `ensure()` only fills in keys that are missing — right for operator-set values, but this field is the bootstrap's own, and existing deployments already carry the wrong one, so a re-run would never have repaired them. Same principle as the existing `reparent()`: only ever correct what this bootstrap itself got wrong.
+
+### theta-directory v2.38.2
+- `tests/fresh_install_onboarding.test.js` pins the convergence above — including the unrecoverable mismatched-MAC case, with the reasoning recorded so the matcher is not "fixed" instead.
+
+### Noted, not changed
+- `views/onboarding.ejs` is **account** onboarding (TOS, date of birth, password). There is no guided *resource* onboarding flow: a new operator has to discover the Install Agent modal, the Plugins page, or manual Add Resource for themselves. A product gap rather than a defect.
+
 ## [3.39.0] - 2026-09-13
 
 SSO ID tokens are now verified. Closing the loop on the OIDC review: the

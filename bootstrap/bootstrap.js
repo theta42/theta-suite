@@ -624,6 +624,33 @@ async function seedDirectory(token, clientId, jumpClientId) {
 		managed: true,
 	}, ['stack-host']);
 
+	// Correct a macAddress an EARLIER run of this bootstrap seeded wrongly.
+	//
+	// `ensure` only fills in keys that are missing, which is right for
+	// operator-set values — but this one is ours, and until setup.sh was fixed it
+	// recorded the default route's interface while theta-agent reports the first
+	// non-virtual one (collectPrimaryMAC, telemetry.go). On a multi-NIC or
+	// bridged host those are different NICs, and the consequence is not a
+	// cosmetic wrong field: the directory matches an enrolling agent to an
+	// existing host by MAC first, and a WRONG MAC is worse than none, because
+	// the MAC-hijack guard then refuses the IP fallback too
+	// (utils/resource_matcher.js). The master ends up in its own directory
+	// twice — bootstrap's row holding the stack's services, the agent's
+	// placeholder holding the agent and every telemetry sample.
+	//
+	// Same principle as reparent() above: only ever correct what this bootstrap
+	// itself got wrong. If the operator has since deleted the field, ensure()
+	// has already refilled it with the right value and this is a no-op.
+	if (HOST_FACTS.mac && host && (host.metadata || {}).macAddress &&
+			host.metadata.macAddress.toLowerCase() !== HOST_FACTS.mac.toLowerCase()) {
+		const stale = host.metadata.macAddress;
+		const merged = { ...host.metadata, macAddress: HOST_FACTS.mac };
+		await dirPut(token, `resources/${host.id}`, { metadata: merged }).catch(() => {});
+		host.metadata = merged;
+		log(`  directory: corrected stack host MAC ${stale} -> ${HOST_FACTS.mac} ` +
+			`(was the default-route interface, not the one theta-agent reports)`);
+	}
+
 	// "Host" means a real, independently-existing machine — something with its
 	// own OS and sshd, that theta-agent or a directory-aware tool like the jump
 	// host could actually reach on its own. A Docker container backing one of
