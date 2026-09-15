@@ -1,3 +1,17 @@
+## [3.40.2] - 2026-09-14
+
+Submodule pointer advance only — no change to theta-suite's own code.
+
+### theta-directory v2.38.3
+- `docs/resources-reimagined.md` now records `views/directory.ejs` as a standing
+  risk in its gaps list, where it had no entry: 5,043 lines / 253KB of inline
+  HTML + CSS + JS in one EJS template (tree rendering, the resource modal, the
+  subtype template editor, access logic), 6.6x the next-largest view. Recorded
+  as a risk rather than a style note because it has already cost a release — a
+  nested `<script>` tag in that file made the Directory page silently not run at
+  all for three releases (`bbc6537`). Decomposition started in v2.36.21 and is
+  unfinished.
+
 ## [3.40.1] - 2026-09-14
 
 Two fresh-install faults reported from a real `./setup.sh` run on a clean host.
