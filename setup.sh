@@ -117,6 +117,26 @@ warn()  { printf '\033[1;33m[setup]\033[0m %s\n' "$*" >&2; }
 error() { printf '\033[1;31m[setup]\033[0m %s\n' "$*" >&2; }
 die()   { msg="$*"; printf '\033[1;31m[setup]\033[0m %b\n' "$msg" >&2; exit 1; }
 
+# Pull a compose service's image, retrying a few times before giving up.
+#
+# Every image this stack needs but does not build itself comes from a public
+# registry, and a public registry occasionally answers a blob request with a
+# 5xx mid-pull ("502 Bad Gateway", "unknown blob"). Under `set -e` that aborted
+# a fresh install at the very first docker command, on a fault that clears on
+# its own within seconds. Retrying is the whole fix: a partial pull is resumed
+# from the layers already in the local store, so a second attempt is cheap.
+compose_pull_retry() {
+	local svc="$1" attempt
+	for attempt in 1 2 3; do
+		if "${COMPOSE[@]}" pull "$svc"; then return 0; fi
+		if (( attempt < 3 )); then
+			warn "pull of '$svc' failed (attempt $attempt/3) -- retrying in $(( attempt * 5 ))s..."
+			sleep $(( attempt * 5 ))
+		fi
+	done
+	die "Could not pull the image for '$svc' after 3 attempts.\nThis is usually a transient registry outage -- re-run ./setup.sh in a minute."
+}
+
 # The gateway installs on the host (systemd, /opt, host networking), so parts of
 # this script need root even though the rest only needs docker. Empty when
 # already root, so the same commands work either way.
@@ -680,11 +700,11 @@ module.exports = {
 		// the public HTTPS host may not resolve from inside the container (or
 		// hairpins back through the proxy itself). @simpleworkjs/oidc-client
 		// v1.1.0+ verifies ID token signatures against this key set; without it
-		// the client would try to discover the URL from the public `issuer`
+		// the client would try to discover the URL from the public "issuer"
 		// above, fail, and fall back to userinfo-only identity with a warning.
 		//
-		// The `issuer` stays the public host on purpose -- it is what the SSO
-		// puts in the token's `iss` claim, and that is what gets compared.
+		// The "issuer" stays the public host on purpose -- it is what the SSO
+		// puts in the token's "iss" claim, and that is what gets compared.
 		jwksUri: 'http://sso-manager:3001/.well-known/jwks.json',
 		endSessionEndpoint: $(js_str "https://${CFG_SSO_HOST}/oauth/logout"),
 		clientId: $(js_str "$CFG_CLIENT_ID"),
@@ -1122,6 +1142,9 @@ if [[ "$RESET_OPENBAO" == "1" ]]; then
 fi
 
 info "Starting openbao..."
+# Pulled explicitly (with retries) rather than letting the `run` below pull it
+# implicitly: an implicit pull that fails takes the whole install down with it.
+compose_pull_retry openbao
 "${COMPOSE[@]}" run --rm --user root openbao chown -R 100:1000 /vault/data
 "${COMPOSE[@]}" up -d openbao
 info "Waiting for openbao to be reachable..."
