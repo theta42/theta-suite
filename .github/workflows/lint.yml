@@ -27,6 +27,17 @@ jobs:
       - name: Shellcheck
         run: shellcheck -S warning setup.sh
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+
+      # shellcheck only reports backticks in a heredoc at style severity, which
+      # -S warning filters out -- and a backtick in an expanding heredoc runs a
+      # command while generating ./config. See the script's header comment.
+      - name: Heredoc backtick check
+        run: node test/check_setup_heredocs.js
+
   bootstrap-syntax:
     # Keep this job name stable: branch protection on master requires a status
     # check named exactly "Syntax check bootstrap.js".

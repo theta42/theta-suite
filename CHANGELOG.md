@@ -1,3 +1,44 @@
+## [3.40.1] - 2026-09-14
+
+Two fresh-install faults reported from a real `./setup.sh` run on a clean host.
+
+### Fixed
+- **`setup.sh` ran three words of a comment as shell commands.** A fresh install
+  printed:
+
+  ```
+  ./setup.sh: line 664: issuer: command not found
+  ./setup.sh: line 664: issuer: command not found
+  ./setup.sh: line 664: iss: command not found
+  ```
+
+  `write_proxy_secrets()` emits `./config/proxy-secrets.js` from an **unquoted**
+  heredoc (`<<PROXYEOF`), which it has to be — the template depends on
+  `$(js_str "$CFG_...")` expanding. Bash treats backticks as command
+  substitution in that mode too, so the v3.39.0 comment explaining the new
+  `jwksUri` — which referred to the public `` `issuer` `` and the token's
+  `` `iss` `` claim in Markdown-style backticks — ran `issuer` and `iss` as
+  commands and substituted their (empty) output. The comment shipped with those
+  words deleted. Backticks replaced with double quotes.
+
+  Cosmetic only because it landed inside a `//` comment; the identical mistake
+  one line lower, in a value, would have written an empty string into deployed
+  OIDC config.
+
+- **A transient registry 5xx aborted the install at its first docker command.**
+  The openbao image pull died with `502 Bad Gateway` from quay.io mid-blob,
+  under `set -e`, taking the whole run down. New `compose_pull_retry()` pulls
+  with three attempts and a backoff, and openbao is now pulled explicitly rather
+  than implicitly by the `compose run` that follows — an implicit pull that
+  fails takes the install with it. A partial pull resumes from the layers
+  already local, so a retry is cheap.
+
+### Added
+- `test/check_setup_heredocs.js` — fails if any backtick appears inside an
+  expanding heredoc in `setup.sh`, wired into the Lint workflow. `shellcheck`
+  reports this only at *style* severity, which the existing `-S warning` gate
+  filters out. Verified against the pre-fix file: it flags all three lines.
+
 ## [3.40.0] - 2026-09-14
 
 A look at resource onboarding for a master on a fresh install, which turned up
