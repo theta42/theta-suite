@@ -1,3 +1,24 @@
+## [3.42.1] - 2026-09-16
+
+### Fixed
+- **v3.42.0's seed corrections did not reach existing installs.** `ensure()`
+  only fills metadata keys that are missing or empty -- the right rule for
+  operator-set values, and the reason a re-run never clobbers your edits. But it
+  also means a key that is present and *wrong* stays wrong forever, so an
+  install that had already been seeded kept its bad OpenResty address and its
+  five unrenderable `mdi:` icons. Only a fresh seed benefited.
+
+  Both now get a targeted correction, following the same pattern this file
+  already uses for the stack host's MAC: rewrite only the exact value the old
+  code would have produced, and leave anything an operator has since changed
+  alone.
+
+  - The OpenResty address is corrected only when it is still literally
+    `https://*.${ldapDomain}` and the public domain differs.
+  - Any resource still carrying an `mdi:` icon class is mapped to its Font
+    Awesome equivalent. An operator would never have typed one -- they render
+    as nothing -- so they are unambiguously ours.
+
 ## [3.42.0] - 2026-09-16
 
 The fresh-install directory seed, corrected. Every finding from the resource
