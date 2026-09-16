@@ -747,7 +747,7 @@ async function seedDirectory(token, clientId, jumpClientId) {
 	// reached at `*.suite.vm42.us`. Same mistake proxyRedirectUris() already
 	// corrects for the OIDC callback, in this same file.
 	const EDGE_DOMAIN = (sso.stack && sso.stack.publicDomain) || DOMAIN;
-	await ensure('service', SITE_NAME && SITE_NAME !== 'local' ? `OpenResty Edge (${SITE_NAME})` : 'OpenResty Edge', `openresty-${SITE_SLUG}`, host.id, {
+	const edgeSvc = await ensure('service', SITE_NAME && SITE_NAME !== 'local' ? `OpenResty Edge (${SITE_NAME})` : 'OpenResty Edge', `openresty-${SITE_SLUG}`, host.id, {
 		address: EDGE_DOMAIN ? `https://*.${EDGE_DOMAIN}` : `https://${PROXY_HOST}`,
 		port: 443,
 		gitRepo: 'https://github.com/theta42/proxy',
@@ -756,6 +756,52 @@ async function seedDirectory(token, clientId, jumpClientId) {
 		tagline: 'Data plane.',
 		requestable: false,
 	}, ['openresty']);
+
+	// Correct an address an EARLIER run of this bootstrap seeded wrongly.
+	//
+	// Same principle, and the same shape, as the stack host's MAC correction
+	// above: `ensure` only fills metadata keys that are missing or empty, which
+	// is right for operator-set values -- but this one is ours, and until this
+	// release it was built from `stack.ldapDomain` instead of the public domain.
+	// On an install where the two differ that is a wildcard for a domain
+	// OpenResty does not serve, and because the key is present and non-empty,
+	// `ensure` would leave it wrong forever.
+	//
+	// Only ever rewrites the exact string the old code would have produced. An
+	// operator who has since set their own address keeps it.
+	if (edgeSvc && EDGE_DOMAIN && DOMAIN && EDGE_DOMAIN !== DOMAIN) {
+		const stale = (edgeSvc.metadata || {}).address;
+		if (stale === `https://*.${DOMAIN}`) {
+			const merged = { ...edgeSvc.metadata, address: `https://*.${EDGE_DOMAIN}` };
+			await dirPut(token, `resources/${edgeSvc.id}`, { metadata: merged }).catch(() => {});
+			edgeSvc.metadata = merged;
+			log(`  directory: corrected OpenResty address ${stale} -> https://*.${EDGE_DOMAIN} ` +
+				`(was built from the LDAP domain, not the public one)`);
+		}
+	}
+
+	// Replace the `mdi:` icon classes this file seeded before v3.42.0. The UI
+	// loads Font Awesome and nothing else and uses the string verbatim as a CSS
+	// class, so every one of them rendered as no icon at all. `ensure` cannot
+	// fix them -- the key is present and non-empty -- and an operator would
+	// never have typed one of these, so anything still carrying an `mdi:` class
+	// is ours to correct.
+	const MDI_REPLACEMENTS = {
+		'mdi:shield-account':    'fa-solid fa-shield-halved',
+		'mdi:server-network':    'fa-solid fa-server',
+		'mdi:book-open-outline': 'fa-solid fa-book-open',
+		'mdi:router-network':    'fa-solid fa-network-wired',
+		'mdi:ssh':               'fa-solid fa-terminal',
+	};
+	for (const r of resources) {
+		const icon = (r.metadata || {}).icon;
+		if (!icon || !String(icon).startsWith('mdi:')) continue;
+		const replacement = MDI_REPLACEMENTS[icon] || 'fa-solid fa-cube';
+		const merged = { ...r.metadata, icon: replacement };
+		await dirPut(token, `resources/${r.id}`, { metadata: merged }).catch(() => {});
+		r.metadata = merged;
+		log(`  directory: replaced unrenderable icon '${icon}' with '${replacement}' on '${r.slug}'`);
+	}
 
 	// SSH jump host service (core component — always registered).
 	let jumpSvc = null;
