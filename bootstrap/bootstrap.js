@@ -680,7 +680,7 @@ async function seedDirectory(token, clientId, jumpClientId) {
 		port: 3001,
 		gitRepo: 'https://github.com/theta42/sso-manager-node',
 		subType: 'web',
-		icon: 'mdi:shield-account',
+		icon: 'fa-solid fa-shield-halved',
 		tagline: 'Home-lab identity and access management.',
 		requestable: false,
 	}, ['sso-manager']);
@@ -693,7 +693,7 @@ async function seedDirectory(token, clientId, jumpClientId) {
 		port: 3000,
 		gitRepo: 'https://github.com/theta42/proxy',
 		subType: 'web',
-		icon: 'mdi:server-network',
+		icon: 'fa-solid fa-server',
 		tagline: 'Reverse proxy and API gateway.',
 		requestable: false,
 	}, ['proxy']);
@@ -711,30 +711,51 @@ async function seedDirectory(token, clientId, jumpClientId) {
 		portMappings: [{ proto: 'tcp', external: 636, internal: 389, comment: 'LDAPS' }],
 		gitRepo: 'https://github.com/theta42/sso-manager-node',
 		subType: 'openldap',
-		icon: 'mdi:book-open-outline',
+		icon: 'fa-solid fa-book-open',
 		tagline: 'LDAP directory for identity.',
 		requestable: false,
 	}, ['openldap']);
 
+	// OpenBao holds the generated secrets the proxy and jump host load their
+	// config from at boot (`proxy/conf`, `jump-host/conf` — see baoPut above),
+	// so it is a real dependency of the stack coming up, not an implementation
+	// detail. It was the one compose service with no directory entry at all:
+	// every other container the stack runs is represented, and the resource an
+	// operator most wants to see the health of when the proxy will not start
+	// was the one that was missing.
+	//
+	// Not externally reachable and not a thing anyone browses to, hence no
+	// public address: it is bound to the compose network on 8200.
+	await ensure('service', SITE_NAME && SITE_NAME !== 'local' ? `OpenBao (${SITE_NAME})` : 'OpenBao', `openbao-${SITE_SLUG}`, host.id, {
+		address: 'http://openbao:8200',
+		port: 8200,
+		subType: 'openbao_vault',
+		icon: 'fa-solid fa-vault',
+		tagline: 'Secret store for generated stack credentials.',
+		requestable: false,
+	}, ['openbao']);
+
 	// Wildcard address: OpenResty fronts every host under the domain (same
 	// */** wildcard convention the proxy's Host records use). Its config lives
 	// in the proxy repo (ops/nginx_conf).
+	//
+	// Built from the PUBLIC domain, not `DOMAIN`. `DOMAIN` is `stack.ldapDomain`
+	// -- the base-DN namespace, which MULTI_SITE_SPEC §4 explicitly allows to
+	// differ from the domain the web hosts live under. On any install where the
+	// two diverge (CFG_PUBLIC_DOMAIN set) this seeded a wildcard for a domain
+	// OpenResty does not serve: `https://*.theta42.com` on a site actually
+	// reached at `*.suite.vm42.us`. Same mistake proxyRedirectUris() already
+	// corrects for the OIDC callback, in this same file.
+	const EDGE_DOMAIN = (sso.stack && sso.stack.publicDomain) || DOMAIN;
 	await ensure('service', SITE_NAME && SITE_NAME !== 'local' ? `OpenResty Edge (${SITE_NAME})` : 'OpenResty Edge', `openresty-${SITE_SLUG}`, host.id, {
-		address: DOMAIN ? `https://*.${DOMAIN}` : `https://${PROXY_HOST}`,
+		address: EDGE_DOMAIN ? `https://*.${EDGE_DOMAIN}` : `https://${PROXY_HOST}`,
 		port: 443,
 		gitRepo: 'https://github.com/theta42/proxy',
 		subType: 'openresty',
-		icon: 'mdi:router-network',
+		icon: 'fa-solid fa-network-wired',
 		tagline: 'Data plane.',
 		requestable: false,
 	}, ['openresty']);
-
-	// Clean up legacy Docker discovery plugin artifacts (e.g. docker-theta-suite-*)
-	for (const r of resources) {
-		if (r.slug && r.slug.startsWith('docker-')) {
-			await dirDelete(token, `resources/${r.id}`).catch(() => {});
-		}
-	}
 
 	// SSH jump host service (core component — always registered).
 	let jumpSvc = null;
@@ -745,7 +766,7 @@ async function seedDirectory(token, clientId, jumpClientId) {
 			port: 3002,
 			gitRepo: 'https://github.com/theta42/jump-host',
 			subType: 'ssh',
-			icon: 'mdi:ssh',
+			icon: 'fa-solid fa-terminal',
 			tagline: 'Secure SSH jump host.',
 			requestable: false,
 		}, ['jump-host']);

@@ -1,3 +1,67 @@
+## [3.42.0] - 2026-09-16
+
+The fresh-install directory seed, corrected. Every finding from the resource
+onboarding audit, plus the second half of the Directory performance problem.
+
+### Fixed
+- **OpenResty Edge was seeded with the wrong domain.** Its address was built
+  from `stack.ldapDomain` -- the base-DN namespace, which MULTI_SITE_SPEC §4
+  explicitly allows to differ from the domain the web hosts live under. On any
+  install with `CFG_PUBLIC_DOMAIN` set, that seeded a wildcard for a domain
+  OpenResty does not serve: `https://*.theta42.com` on a site actually reached
+  at `*.suite.vm42.us`. Now built from `stack.publicDomain`, the same
+  correction `proxyRedirectUris()` already applies to the OIDC callback in this
+  same file.
+
+- **The five core service resources rendered with no icon.** They carried
+  `mdi:` icon classes (`mdi:shield-account`, `mdi:server-network`,
+  `mdi:book-open-outline`, `mdi:router-network`, `mdi:ssh`) dating to v1.34.3.
+  The UI loads Font Awesome and nothing else, and uses the string verbatim as a
+  CSS class, so all five were inert -- while the four endpoint entries added
+  later, which correctly used `fa-solid`, rendered fine. Replaced with verified
+  Font Awesome equivalents (checked against the shipped icon set: `fa-router`
+  and `fa-ssh` do not exist in the free build).
+
+- **`setup.sh` deleted every resource whose slug began with `docker-`, on every
+  run.** The intent was legacy `docker-theta-suite-*` artifacts from a
+  discovery plugin retired several releases ago. Nothing the system generates
+  today collides -- the agent emits `svc-<host>-docker-<name>` -- but an
+  operator-created `docker-host-01` would have been destroyed silently on the
+  next re-run. The legacy artifacts are long gone; the sweep is removed rather
+  than narrowed.
+
+- **OpenBao had no directory entry.** It was the one compose service with no
+  resource at all, despite holding the generated secrets the proxy and jump
+  host load their config from at boot -- so the resource an operator most wants
+  the health of when the proxy will not start was the one that was missing. Now
+  seeded as a service with the shipped `openbao_vault` subtype.
+
+### Submodules
+- **theta-directory 2.38.4 -> 2.39.0** -- `openldap`, `openresty` and
+  `jump-host` are now shipped subtype templates, so those services finally get
+  a status dot (`services/scheduler.js` only evaluates subtypes it has a
+  template for, so they had been permanently blank); a new vocabulary test
+  asserts every subType this bootstrap seeds has one; and the Font Awesome
+  SVG-with-JS build is dropped.
+- **proxy 2.6.1 -> 2.6.2** -- Font Awesome SVG-with-JS dropped.
+- **jump-host 3.8.1 -> 3.8.2** -- Font Awesome SVG-with-JS dropped.
+
+### Notes
+- Dropping Font Awesome's `js/all.min.js` (loaded alongside the webfont CSS in
+  all three shells) is the other half of the Directory performance problem
+  fixed in 3.41.0. That release fixed the unbounded `app.notify` history -- the
+  4GB. This one removes a MutationObserver that rewrote every `<i>` into an
+  `<svg>` on every render and could not keep up: measured in Chrome, 150 rows x
+  6 rebuilds froze the renderer at 776MB having converted zero icons, while the
+  same run without it, doing 5.5x more work, was untroubled.
+- The three `views/top.ejs` copies are documented as byte-identical across the
+  apps but had already drifted before this change. The Font Awesome edit was
+  applied identically to all three; reconciling the rest of the drift is not
+  done here.
+- `jq-repeat` v2.2.3 (batched DOM insertion) and v2.2.4 (dev-dependency updates
+  clearing all 12 advisories, all dev-only) are released; the apps still resolve
+  2.2.2 and will pick them up on the next lockfile refresh.
+
 ## [3.41.0] - 2026-09-16
 
 The Directory page grew until the browser killed the tab -- observed at 4GB on a
