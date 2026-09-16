@@ -1,3 +1,57 @@
+## [3.41.0] - 2026-09-16
+
+The Directory page grew until the browser killed the tab -- observed at 4GB on a
+74-resource install. This release is that fix, across every app in the suite.
+
+### Fixed
+- **The Directory tab reached 4GB and died.** It is not the tree renderer and
+  not catalog size: the install this was reproduced on has 74 resources / 73
+  edges / 1 agent, and 74 rows render in about 20ms. `jq-repeat` was ruled out
+  directly -- a WeakRef test showed 0 of 500 rows retained after 9 replacement
+  cycles and a forced GC.
+
+  The growth was in `app.notify` (`@simpleworkjs/frontend`), which subscribes to
+  every model event for the life of the tab and appended each one to an array
+  nothing ever trimmed -- the cap it had was on *rendered rows*, not on retained
+  events. Worse, it re-collapsed that entire array on **every** new event in
+  order to render 30 rows, so one arriving event cost O(history), on a history
+  that only grew.
+
+  The Directory is the page that dies because it is the highest-event-rate page
+  in the stack: a Proxmox discovery poll rewrites `last_seen` on every
+  discovered guest (41 LXC + 12 VM + 3 hypervisors here), and each of those
+  writes publishes `model:Resource:update` to every open Directory tab
+  (`sso-manager-node/nodejs/utils/socket_pubsub.js`).
+
+  Fixed in `@simpleworkjs/frontend` v0.4.3 and picked up by all three UIs. The
+  proxy and jump host load the same shell and the same feed, so they carried the
+  same defect at a lower event rate.
+
+- **Two sub-projects reported stale versions.** `proxy/nodejs/package.json` said
+  `2.5.3` on a tree released as v2.6.0, and `jump-host/nodejs/package.json` said
+  `3.7.0` on a tree released as v3.8.0 -- both releases updated their changelog
+  and were tagged, but neither bumped the version field. Corrected in v2.6.1 and
+  v3.8.1 respectively.
+
+### Submodules
+- **theta-directory 2.38.3 -> 2.38.4** -- `@simpleworkjs/frontend` ^0.4.0 ->
+  ^0.4.3; the Directory memory fix.
+- **proxy 2.6.0 -> 2.6.1** -- same dependency bump; plus the package.json
+  version correction.
+- **jump-host 3.8.0 -> 3.8.1** -- same dependency bump; plus the package.json
+  version correction.
+
+All three lockfiles had been pinned at `@simpleworkjs/frontend` 0.4.1, so each
+also picks up 0.4.2 (notification model icons, foreground toasts,
+`app.notify.clear()`) and 0.4.1's `app.messages.confirm()` fix.
+
+### Notes
+- `jq-repeat` v2.2.3 (batched DOM insertion through a `DocumentFragment`) is
+  tagged and released on GitHub but **not yet on npm** -- its publish workflow
+  failed with `ENEEDAUTH`. The apps resolve `jq-repeat` from the registry, so
+  they stay on 2.2.2 here and will pick 2.2.3 up on the next install once it is
+  published. It is a rendering improvement, unrelated to the memory fix above.
+
 ## [3.40.2] - 2026-09-14
 
 Submodule pointer advance only — no change to theta-suite's own code.
