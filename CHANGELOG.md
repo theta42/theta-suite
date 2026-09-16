@@ -1,3 +1,48 @@
+## [3.42.3] - 2026-09-16
+
+### Fixed
+- **A failed agent install left the host unmanaged, and every install after it
+  did the same.** `install.sh` stops a running agent before replacing its
+  binary, and deliberately does not restart one that was already stopped when
+  it began -- so an upgrade cannot override an operator who stopped it on
+  purpose. That rule cannot distinguish "the operator stopped this" from "the
+  previous run of this very script stopped it and then aborted", and the
+  second case is self-perpetuating: run one stops the agent and dies, run two
+  sees it stopped, honours the rule, prints `Theta Agent installation
+  complete!` and leaves the machine with no agent. This was observed on the
+  back of v3.42.2's own bug -- the install carrying the fix is the one that
+  left the host down. The installer now records that it was the one that
+  stopped the agent and restarts it if it aborts, and the "leaving it stopped"
+  branch is a red warning rather than a green line above "installation
+  complete".
+
+### Security
+- **`agent.yml` was installed world-readable with a fleet credential in it.**
+  `install.sh` ran `chmod 644` on a file holding the join key -- which enrols
+  *any* host -- and, after enrolment, that host's own auth token. The daemon
+  has always written the file 0600, so the installer was widening what the
+  agent tightens, and the window closed only if enrolment succeeded. On a host
+  that never enrolled, the join key stayed readable by every local user
+  indefinitely. Now 0600 at install time. **If you have hosts that were
+  installed but never enrolled, treat their join keys as exposed and rotate
+  them.**
+
+### Submodules
+- **theta-agent v2.22.2 → v2.22.3**: aborted installs restore the agent they
+  stopped; `agent.yml` written 0600; the "left stopped" outcome is reported as
+  a failure rather than logged as success.
+- **sso-manager-node v2.39.0 → v2.39.1**: the served `install.sh` fallback
+  (used by a directory that has never run `setup.sh`) re-synced to the agent's
+  copy -- it has drifted before, and a drifted copy means the Install Agent
+  page hands out a broken installer. Root `package.json` version slip
+  (`2.38.2` on a tree released as `v2.39.0`) corrected. No application code
+  changed.
+
+**Upgrading:** re-run `./setup.sh` on the directory host to stage the v2.22.3
+artifacts, then re-run the install line on any affected host. A host left
+stopped by an earlier failed install will not start itself -- `systemctl start
+theta-agent` once, and from this version on the installer handles it.
+
 ## [3.42.2] - 2026-09-16
 
 ### Fixed
