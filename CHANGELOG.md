@@ -1,3 +1,31 @@
+## [3.42.2] - 2026-09-16
+
+### Fixed
+- **Agent onboarding was broken: the install command the Directory hands out
+  failed its own pre-flight check.** Running the copy-paste line from
+  Directory → Install Agent (`install.sh --url … --join-key …`) aborted with
+  `FAIL public_key is empty`, leaving the host with a binary, a config, and no
+  agent. The `verify` step added in theta-agent v2.22.0 treated an empty
+  `public_key` as fatal unconditionally, but on the join-key path there is
+  nothing that could have set it yet -- the directory issues the public key in
+  the enrolment config frame and the agent writes it to `agent.yml` on first
+  connect. Since `install.sh` runs `verify` *before* installing the service,
+  the documented way to onboard a host could not complete on v2.22.0 or
+  v2.22.1. Fixed in theta-agent v2.22.2.
+
+### Submodules
+- **theta-agent v2.22.1 → v2.22.2**: `verify` no longer rejects the join-key
+  install path (empty `public_key` is fatal only once a host holds its own
+  token; malformed stays fatal on both paths). Also: a permission error
+  reading the root-only WireGuard key is a warning when `verify` is run by a
+  non-root user, rather than a fatal problem reported about a healthy install.
+
+**Upgrading:** re-run `./setup.sh` on the directory host. The agent artifacts
+served from `/resources/theta-agent/` are staged from the release matching the
+pinned submodule tag, so the fixed binaries and `SHA256SUMS` only appear after
+setup.sh runs against this version. Already-enrolled agents are unaffected --
+this bug only ever blocked new installs.
+
 ## [3.42.1] - 2026-09-16
 
 ### Fixed
