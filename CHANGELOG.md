@@ -1,3 +1,18 @@
+## [3.44.2] - 2026-09-17
+
+### Fixed
+- **Every notification broadcast reported "Sent to 0 recipient(s)".** v3.44.0
+  moved the send into the background, which makes the response a receipt rather
+  than a result -- it carries `sent_count: 0` because nothing has been sent when
+  it returns -- and the compose form was still reading those counters off it. It
+  now reports how many the send was queued for, and the history table gained a
+  status column: a send in flight, one that failed, and one interrupted by a
+  restart all rendered the same `0 / 0` before, which reads as "delivered to
+  nobody" in every case.
+
+### Submodules
+- **sso-manager-node v2.41.0 → v2.41.1**
+
 ## [3.44.1] - 2026-09-17
 
 ### Fixed
