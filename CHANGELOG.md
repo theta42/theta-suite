@@ -1,3 +1,27 @@
+## [3.44.1] - 2026-09-17
+
+### Fixed
+- **A directory outage was reported to SSH users as a permissions denial.** The
+  jump host's `accessibleHosts()` caught its own transport errors and returned
+  an empty list -- which claims "you have access to nothing" rather than "I
+  could not find out". Both call sites already handled the outage properly and
+  **both were unreachable**, so a user got
+
+      no host you can access matches that target
+
+  and the audit log recorded `no-such-target`, indistinguishable from a typo or
+  a real denial. An operator debugging "nobody can reach anything" was pointed
+  at LDAP group membership rather than at the directory being down.
+
+  Still fails closed -- an unreachable directory grants no access -- but it now
+  says which of the two it is. The failed lookup is also no longer cached for
+  30s, which used to keep a user locked out after the directory came back, and
+  `GET /api/user/hosts` answers 503 rather than an empty host list that looks
+  like revoked access.
+
+### Submodules
+- **jump-host v3.9.0 → v3.9.1**
+
 ## [3.44.0] - 2026-09-17
 
 Notifications. The bones were fine; nothing could be turned down, and one path
