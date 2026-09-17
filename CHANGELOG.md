@@ -1,3 +1,62 @@
+## [3.44.0] - 2026-09-17
+
+Notifications. The bones were fine; nothing could be turned down, and one path
+could not be trusted.
+
+### Security
+- **Any authenticated user could inject HTML into an email sent to a resource
+  owner.** The notification email template renders its body with a triple
+  mustache -- deliberate, since callers compose markup -- which puts escaping on
+  every caller. The access-request path did not escape `note`, which is written
+  by whoever is asking for access and delivered to the **owner**. A note
+  containing an anchor arrived as a working link to someone else's domain in a
+  mail the owner trusts, and a trailing unclosed tag hid the real "Review it on
+  the Directory page" line after it. The decision note did the same in the other
+  direction, to the requester.
+
+  This became more reachable with v3.43.0: before the catalog, "Request access"
+  was a card on a page nobody could navigate; it is now the primary call to
+  action. **Anyone running v3.43.0 should take this release.**
+
+### Fixed
+- **"I'm getting a lot of notifications at once."** The in-app feed popped one
+  toast and one desktop notification per arriving event, while its own list
+  collapsed correctly -- so a status sweep produced one tidy "42 resources
+  updated" row and 42 stacked toasts beside it. Events do not arrive one at a
+  time: the status evaluator walks every resource and writes the ones that
+  changed, and a discovery poll touches `last_seen` on every guest.
+- **The Directory needed a manual refresh after a graph-only change.**
+  `ResourceEdge` events were published and gated and subscribed to by nobody --
+  and the tree is derived from the edges, so re-parenting a service or adopting
+  a discovered host arrived and was discarded. `SubtypeTemplate` had no read
+  gate at all, so the bus took its fail-closed branch and dropped every event.
+- **A broadcast blocked the request that started it** -- one SMTP round-trip per
+  recipient, in series, inside the handler -- and left its record stranded at
+  `sending` when the request timed out.
+
+### Added
+- **The notification bell can be filtered.** Mute by model, by action, or by
+  both: `'Resource:update'`, `'Resource'`, `'*:update'`. A mute is a view rather
+  than a filter on what is recorded, so unmuting shows the history you had been
+  ignoring rather than a gap; a muted kind stops counting toward unread and
+  stops popping. Preferences persist per browser. The controls are built from
+  the models actually present in the feed, so you filter the noise you can see.
+
+### Submodules
+- **sso-manager-node v2.40.0 → v2.41.0**: the escaping fix, the backgrounded
+  broadcast with live progress and an interrupted-send sweep at boot, the
+  `ResourceEdge`/`SubtypeTemplate` live updates, and the notification filter
+  container and title map.
+- **proxy v2.6.2 → v2.7.0** and **jump-host v3.8.3 → v3.9.0**: the notification
+  filter container and `@simpleworkjs/frontend` 0.5.0. No application code
+  changed in either. Both also carry the toast-burst fix, since all three apps
+  share the same bell.
+
+**Upgrading:** `git pull && ./setup.sh`. Nothing in this release changes stored
+data, and an interrupted broadcast from a previous version is marked rather
+than resumed -- re-sending would re-deliver to everyone the first run reached,
+and the record does not say who those were.
+
 ## [3.43.0] - 2026-09-16
 
 The catalog at `/` becomes a curated launchpad instead of a render of the whole
