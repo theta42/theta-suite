@@ -1,3 +1,68 @@
+## [3.43.0] - 2026-09-16
+
+The catalog at `/` becomes a curated launchpad instead of a render of the whole
+directory. Service discovery and host discovery are different jobs for
+different audiences: the catalog serves someone who wants to find a service and
+does not want to read a graph, and the directory serves someone who can.
+
+### Fixed
+- **A fresh install put 18 cards on the catalog; three belonged there.** Three
+  producers each described the same six containers -- a component seeded by
+  this bootstrap, a docker container registered by the agent, and a separate
+  seeded endpoint, all carrying the same URL. The directory appeared three
+  times, the proxy three times, the jump host three times under two names.
+- **On a populated directory it was far worse.** With a Proxmox cluster
+  discovered, a user with **no access at all** was shown 76 cards: 41 LXC
+  containers, 12 VMs, 3 hypervisors, docker sidecars, 27 of them with no
+  address to reach them by. That is not discovery, and it published the shape
+  of the estate to anyone with an account.
+- **`OpenResty Edge` was seeded for the wrong domain.** `EDGE_DOMAIN` fell back
+  to `stack.ldapDomain` -- the base-DN namespace -- when `publicDomain` was
+  simply unset, producing `https://*.theta42.com` on a site actually reached at
+  `*.suite.vm42.us`. The operator never configured a wrong value; the fallback
+  chose one. It now prefers the public domain, then the domain derived from
+  `SSO_HOST` (which this file already computes for exactly that purpose), and
+  only then the LDAP domain.
+
+### Changed
+- **The bootstrap seeds three catalog entries, not twelve resources plus four
+  endpoints.** `Directory`, `Proxy` and `Jump Host`, each with `catalog: true`
+  and its published FQDN. Everything else it seeds stays in the directory,
+  where an inventory belongs.
+
+  The four separate ENDPOINT resources (`ssh-jump-`, `http-sso-`, `http-proxy-`,
+  `http-jump-`) are gone. They existed for a real reason -- "OpenResty Edge" is
+  one wildcard entry, not an entry per published hostname, so the directory
+  could not answer "how do I reach the SSO" -- but four more rows was the wrong
+  answer. It gave every component two resources with the same URL and split a
+  service's access groups, secrets and status across a pair of rows that were
+  meant to be the same thing. The three components now carry their own
+  `fqdn`/`externalPort`, so the published hostname lives on the resource it
+  belongs to.
+- **Catalog entries are `requestable`.** They were seeded `requestable: false`,
+  which on a launchpad renders a dead "Not requestable" badge and offers
+  nothing else -- and these are exactly what a new person at a site needs to
+  ask for.
+- **`jump-host` is subType `jump-host`, not `ssh`.** It was `ssh` while
+  carrying an `https://` address: the admin web UI on an SSH-typed resource.
+
+### Submodules
+- **sso-manager-node v2.39.1 → v2.40.0**: the catalog itself -- membership,
+  the admin curation switch, the `In Catalog` filter, status on cards resolved
+  by walking to the nearest host, plugin-created entries, and the `web`/`http`
+  subtype merge. Four separate bugs fixed alongside it, including an
+  `isOAuthSubtype` filter that was applied to one of two lists and an `ssh://`
+  address rendering as `https://ssh://host:2222:2222`.
+- **jump-host v3.8.2 → v3.8.3**: `@simpleworkjs/directory-schema` 1.3.0. No
+  code change -- jump-host is a machine caller and receives the non-admin
+  projection, so a metadata key not declared in the shared schema is invisible
+  to it.
+
+**Upgrading:** re-run `./setup.sh`. Existing installs keep the rows an earlier
+bootstrap created at the retired endpoint slugs -- nothing deletes them, they
+simply stop being seeded and never had `catalog: true`, so they do not reach
+the launchpad.
+
 ## [3.42.3] - 2026-09-16
 
 ### Fixed

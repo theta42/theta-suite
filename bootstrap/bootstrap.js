@@ -675,14 +675,32 @@ async function seedDirectory(token, clientId, jumpClientId) {
 	// `serviceSuffix`. Until it did, every container edge named a parent that
 	// did not exist and the stack's own containers arrived unparented.
 
-	await ensure('service', SITE_NAME && SITE_NAME !== 'local' ? `SSO Manager (${SITE_NAME})` : 'SSO Manager', `sso-manager-${SITE_SLUG}`, host.id, {
+	// The three CATALOG entries are seeded here: this one, the proxy, and the
+	// jump host. They are the only three things on a fresh install a person
+	// browses to, and before `catalog` existed the launchpad rendered every
+	// managed resource instead -- 18 cards on a fresh install, 76 on one with a
+	// Proxmox cluster discovered. Everything else this file seeds stays in the
+	// directory, where an inventory belongs.
+	//
+	// `requestable` is true on all three. A catalog card a user cannot ask for
+	// access to renders a dead "Not requestable" badge and offers nothing else,
+	// and these are exactly what a new person needs to ask for.
+	//
+	// subType `http` everywhere: `web` is retired. The two were the same thing,
+	// and seeding both is why the SSO had a `sso-manager-<site>` row AND an
+	// `http-sso-<site>` row carrying the identical URL.
+	await ensure('service', SITE_NAME && SITE_NAME !== 'local' ? `Directory (${SITE_NAME})` : 'Directory', `sso-manager-${SITE_SLUG}`, host.id, {
 		address: `https://${SSO_HOST}`,
+		fqdn: SSO_HOST,
+		externalIsHTTPS: true,
+		externalPort: 443,
+		isHTTPS: true,
 		port: 3001,
-		gitRepo: 'https://github.com/theta42/sso-manager-node',
-		subType: 'web',
+		subType: 'http',
 		icon: 'fa-solid fa-shield-halved',
-		tagline: 'Home-lab identity and access management.',
-		requestable: false,
+		tagline: 'Sign in, see what you have access to, and ask for more.',
+		catalog: true,
+		requestable: true,
 	}, ['sso-manager']);
 
 	// Proxy = the node management UI; OpenResty = the data plane every hostname
@@ -690,12 +708,16 @@ async function seedDirectory(token, clientId, jumpClientId) {
 	// parented directly to the stack host — see the "Host means..." note above.
 	const psvc = await ensure('service', SITE_NAME && SITE_NAME !== 'local' ? `Proxy (${SITE_NAME})` : 'Proxy', `proxy-${SITE_SLUG}`, host.id, {
 		address: `https://${PROXY_HOST}`,
+		fqdn: PROXY_HOST,
+		externalIsHTTPS: true,
+		externalPort: 443,
+		isHTTPS: true,
 		port: 3000,
-		gitRepo: 'https://github.com/theta42/proxy',
-		subType: 'web',
+		subType: 'http',
 		icon: 'fa-solid fa-server',
-		tagline: 'Reverse proxy and API gateway.',
-		requestable: false,
+		tagline: 'Publish a web service and route a hostname to it.',
+		catalog: true,
+		requestable: true,
 	}, ['proxy']);
 
 	// OpenLDAP is independently consumed — Linux hosts authenticate against it
@@ -746,7 +768,14 @@ async function seedDirectory(token, clientId, jumpClientId) {
 	// OpenResty does not serve: `https://*.theta42.com` on a site actually
 	// reached at `*.suite.vm42.us`. Same mistake proxyRedirectUris() already
 	// corrects for the OIDC callback, in this same file.
-	const EDGE_DOMAIN = (sso.stack && sso.stack.publicDomain) || DOMAIN;
+	// PUBLIC_DOMAIN (derived from SSO_HOST) sits between the two on purpose.
+	// Falling straight back to DOMAIN -- the LDAP base-DN namespace -- is what
+	// still produced `https://*.theta42.com` on a site actually reached at
+	// `*.suite.vm42.us` whenever CFG_PUBLIC_DOMAIN was simply unset: the
+	// operator never configured a wrong value, the fallback chose one. The host
+	// the SSO is served on is a far better guess at the public domain than the
+	// directory namespace, and it is already computed for exactly that purpose.
+	const EDGE_DOMAIN = (sso.stack && sso.stack.publicDomain) || PUBLIC_DOMAIN || DOMAIN;
 	const edgeSvc = await ensure('service', SITE_NAME && SITE_NAME !== 'local' ? `OpenResty Edge (${SITE_NAME})` : 'OpenResty Edge', `openresty-${SITE_SLUG}`, host.id, {
 		address: EDGE_DOMAIN ? `https://*.${EDGE_DOMAIN}` : `https://${PROXY_HOST}`,
 		port: 443,
@@ -807,52 +836,52 @@ async function seedDirectory(token, clientId, jumpClientId) {
 	let jumpSvc = null;
 	{
 		const jumpHost = JUMP_HOST;
-		jumpSvc = await ensure('service', SITE_NAME && SITE_NAME !== 'local' ? `SSH Jump Host (${SITE_NAME})` : 'SSH Jump Host', `jump-host-${SITE_SLUG}`, host.id, {
+		// subType `jump-host`, not `ssh`. It was `ssh` while carrying an
+		// `https://` address -- the admin web UI on an SSH-typed resource --
+		// which is wrong in the vocabulary and wrong for anything reading the
+		// subtype to decide how to reach it.
+		//
+		// This is the one catalog card that answers a HOST question, and it has
+		// to be: hosts are no longer on the catalog, and the jump-host username
+		// grammar (`uid_-_machine@jump`) existed nowhere else in the product --
+		// it was generated only on host cards on the launchpad, and the
+		// directory never showed it. The card renders both the web UI and that
+		// ssh line.
+		jumpSvc = await ensure('service', SITE_NAME && SITE_NAME !== 'local' ? `Jump Host (${SITE_NAME})` : 'Jump Host', `jump-host-${SITE_SLUG}`, host.id, {
 			address: jumpHost ? `https://${jumpHost}` : '',
+			fqdn: jumpHost || '',
+			externalIsHTTPS: true,
+			externalPort: 443,
+			isHTTPS: true,
 			port: 3002,
-			gitRepo: 'https://github.com/theta42/jump-host',
-			subType: 'ssh',
+			sshPort: JUMP_SSH_PORT,
+			subType: 'jump-host',
 			icon: 'fa-solid fa-terminal',
-			tagline: 'Secure SSH jump host.',
-			requestable: false,
+			tagline: 'SSH to any machine you have access to, through one door.',
+			catalog: true,
+			requestable: true,
 		}, ['jump-host']);
 	}
 
-	// The reachable ENDPOINTS of the stack, as distinct from the components
-	// above.
+	// The separate ENDPOINT resources are gone.
 	//
-	// `jump-host-<site>` is the jump host as a component: its repo, its admin
-	// UI on 3002, the thing you restart. None of that is the port a person
-	// actually types, and the three published hostnames the whole stack is
-	// reached through had no directory entry at all -- OpenResty terminates
-	// them, but "OpenResty Edge" is one resource for a wildcard, not an entry
-	// per name. So a directory whose job is answering "how do I reach this"
-	// could not answer it for the SSO, the proxy, or the jump host.
+	// They existed because "OpenResty Edge" is one wildcard entry, not an entry
+	// per published hostname, so the directory could not answer "how do I reach
+	// the SSO". That was the right problem; four more rows was the wrong answer.
+	// It gave every component TWO resources with the same URL --
+	// `sso-manager-<site>` and `http-sso-<site>` -- which is half of why a fresh
+	// install put 18 cards on the catalog, and it split a service's access
+	// groups, secrets and status across a pair of rows that were supposed to be
+	// the same thing.
 	//
-	// Kept as separate `http`/`ssh` service resources rather than more metadata
-	// on the component: they are what gets granted, monitored and offered as a
-	// jump target, and each has its own port and address.
-	const JUMP_SSH_PORT = Number(process.env.JUMP_SSH_PORT || 2222);
-	const endpoints = [
-		['SSH (jump host)', `ssh-jump-${SITE_SLUG}`, 'ssh', JUMP_SSH_PORT,
-			JUMP_HOST ? `ssh://${JUMP_HOST}:${JUMP_SSH_PORT}` : '',
-			'fa-solid fa-terminal', 'SSH entry point to every managed host.'],
-		['SSO (HTTP)', `http-sso-${SITE_SLUG}`, 'http', 443, `https://${SSO_HOST}`,
-			'fa-solid fa-globe', 'The directory and identity provider over HTTPS.'],
-		['Proxy (HTTP)', `http-proxy-${SITE_SLUG}`, 'http', 443, `https://${PROXY_HOST}`,
-			'fa-solid fa-globe', 'The proxy management UI over HTTPS.'],
-		['Jump (HTTP)', `http-jump-${SITE_SLUG}`, 'http', 443, JUMP_HOST ? `https://${JUMP_HOST}` : '',
-			'fa-solid fa-globe', 'The jump host web UI over HTTPS.'],
-	];
-	for (const [label, slug, subType, port, address, icon, tagline] of endpoints) {
-		// A hostname that was never configured (no public domain, so no
-		// JUMP_HOST) would seed an endpoint pointing nowhere.
-		if (!address) continue;
-		await ensure('service',
-			SITE_NAME && SITE_NAME !== 'local' ? `${label} (${SITE_NAME})` : label,
-			slug, host.id,
-			{ address, port, subType, icon, tagline, requestable: false });
-	}
+	// The three components above now carry their own `fqdn`/`externalPort`, so
+	// the published hostname lives on the resource it belongs to. The SSH entry
+	// point is not a resource either: the Jump Host card derives its ssh line
+	// from `sshPort` and the jump hostname, which is where a person looks for it.
+	//
+	// Nothing deletes rows an earlier bootstrap created at these slugs. They are
+	// harmless -- they simply stop being seeded, and never had `catalog: true`,
+	// so they do not reach the launchpad.
 
 	// Correct installs seeded between 2026-08-05 and this release, where Proxy's
 	// and jump-host's services were parented to now-removed synthetic
